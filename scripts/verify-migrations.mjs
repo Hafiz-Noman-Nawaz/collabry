@@ -127,12 +127,22 @@ const resendFrom = env.RESEND_FROM_EMAIL;
 if (!resendKey || !resendFrom) {
   console.log("  skip  RESEND_API_KEY or RESEND_FROM_EMAIL is not set (invitations still work via shareable links)");
 } else {
+  const senderDomain = resendFrom.match(/@([a-z0-9.-]+)\s*>?$/i)?.[1]?.toLowerCase() ?? null;
+  if (!senderDomain) fail("RESEND_FROM_EMAIL has no readable address (expected: Name <you@yourdomain>)");
   try {
     const resend = await fetch("https://api.resend.com/domains", {
       headers: { Authorization: `Bearer ${resendKey}` },
     });
-    if (resend.ok) ok("Resend API accepted the configured key");
-    else if (resend.status === 401 || resend.status === 403) fail("Resend API key was rejected");
+    if (resend.ok) {
+      ok("Resend API accepted the configured key");
+      const domains = (await resend.json()).data ?? [];
+      const verified = new Set(
+        domains.filter((domain) => (domain.status ?? "verified") === "verified").map((domain) => (domain.name ?? "").toLowerCase()),
+      );
+      if (verified.size === 0) fail("no verified sending domain on this Resend account");
+      else if (senderDomain && verified.has(senderDomain)) ok(`sender domain ${senderDomain} is verified`);
+      else fail(`sender domain ${senderDomain ?? "?"} is not verified (verified: ${[...verified].join(", ")})`);
+    } else if (resend.status === 400 || resend.status === 401 || resend.status === 403) fail("Resend API key was rejected");
     else fail(`Resend probe returned HTTP ${resend.status}`);
   } catch {
     fail("Resend probe unreachable (network or DNS error)");

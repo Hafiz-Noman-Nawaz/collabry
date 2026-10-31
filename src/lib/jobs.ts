@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyTeam, teamMemberIds } from "@/lib/notify";
+import { configuredAppUrl } from "@/lib/app-url";
 
 type JobRow = {
   id: string;
@@ -45,12 +46,14 @@ async function handleMeetingReminder(job: JobRow) {
   if (!meetingId) throw new Error("meeting_reminder payload is missing meetingId");
   const { data: meeting } = await admin
     .from("meetings")
-    .select("id, team_id, title, starts_at, status")
+    .select("id, team_id, title, agenda, starts_at, ends_at, timezone, status, meeting_url, created_by")
     .eq("id", meetingId)
     .maybeSingle();
   if (!meeting || meeting.status !== "scheduled") return; // cancelled or removed: nothing to remind
   if (new Date(meeting.starts_at).getTime() <= Date.now()) return; // already started
   const members = await teamMemberIds(meeting.team_id);
+  // Emails need the canonical host; a reminder fired from the job runner has no request.
+  const origin = configuredAppUrl();
   await notifyTeam({
     userIds: members,
     teamId: meeting.team_id,
@@ -59,6 +62,19 @@ async function handleMeetingReminder(job: JobRow) {
     body: `Starts ${new Date(meeting.starts_at).toLocaleString()}`,
     resourceType: "meeting",
     resourceId: meeting.id,
+    organizerId: meeting.created_by,
+    meeting: {
+      action: "reminder",
+      details: {
+        title: meeting.title,
+        agenda: meeting.agenda,
+        startsAt: meeting.starts_at,
+        endsAt: meeting.ends_at,
+        timezone: meeting.timezone,
+        joinUrl: meeting.meeting_url,
+        meetingUrl: origin ? `${origin}/meetings/${meeting.id}` : "",
+      },
+    },
   });
 }
 

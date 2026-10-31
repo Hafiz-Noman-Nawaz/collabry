@@ -7,6 +7,7 @@ import { rateLimit, tooManyRequests } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { notifyTeam } from "@/lib/notify";
 import { scheduleMeetingReminder } from "@/lib/jobs";
+import { getPublicAppUrl } from "@/lib/app-url";
 import { attachProfiles, loadProfiles, profileOf } from "@/lib/profiles";
 
 const meetingSchema = z.object({
@@ -99,6 +100,7 @@ export async function POST(request: Request) {
 
   const notifyIds = attendeeIds.filter((userId) => userId !== user.id);
   if (notifyIds.length > 0) {
+    const origin = getPublicAppUrl(request);
     await notifyTeam({
       userIds: notifyIds,
       teamId: parsed.data.teamId,
@@ -107,6 +109,19 @@ export async function POST(request: Request) {
       body: `Starts ${new Date(parsed.data.startsAt).toLocaleString()}`,
       resourceType: "meeting",
       resourceId: data.id,
+      organizerId: user.id,
+      meeting: {
+        action: "scheduled",
+        details: {
+          title: parsed.data.title,
+          agenda: parsed.data.agenda,
+          startsAt: parsed.data.startsAt,
+          endsAt: parsed.data.endsAt,
+          timezone: parsed.data.timezone,
+          joinUrl: parsed.data.meetingUrl || null,
+          meetingUrl: `${origin}/meetings/${data.id}`,
+        },
+      },
     });
   }
 

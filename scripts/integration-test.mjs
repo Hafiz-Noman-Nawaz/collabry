@@ -10,7 +10,8 @@
 // The suite creates three throwaway users in the configured Supabase project,
 // exercises the real API routes with real RLS, then deletes everything it made.
 import { readFileSync, existsSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { spawn, execSync } from "node:child_process";
+import { createConnection } from "node:net";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -22,6 +23,9 @@ const PORT = Number(process.env.TEST_PORT ?? 3311);
 const BASE_URL = process.env.BASE_URL ?? `http://localhost:${PORT}`;
 const RUN_ID = Date.now().toString(36);
 const PASSWORD = `Collabry!Test-${randomUUID().slice(0, 8)}`;
+// Never handed to the booted server: a key Resend rejects, so no live mail leaves the suite.
+const SANDBOX_RESEND_KEY = "integration-suite-sandbox-key";
+const SANDBOX_RESEND_FROM = "Collabry <no-reply@integration.invalid>";
 
 function loadEnv() {
   const env = {};
@@ -95,6 +99,22 @@ async function signIn(session, email) {
   if (error) throw new Error(`Sign in failed for ${email}: ${error.message}`);
 }
 
+/** False when something is already listening, i.e. a stale server would answer instead. */
+function portIsFree(port) {
+  return new Promise((resolvePromise) => {
+    const socket = createConnection({ port, host: "127.0.0.1" });
+    socket.once("connect", () => {
+      socket.destroy();
+      resolvePromise(false);
+    });
+    socket.once("error", () => resolvePromise(true));
+    socket.setTimeout(1000, () => {
+      socket.destroy();
+      resolvePromise(true);
+    });
+  });
+}
+
 async function waitForServer(timeoutMs = 90000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -125,15 +145,25 @@ async function cleanup() {
 
 async function main() {
   let server = null;
+  let emailDisabledForRun = false;
   if (!process.env.BASE_URL) {
+    emailDisabledForRun = true;
     if (!existsSync(resolve(root, ".next"))) {
       console.error("No .next build found. Run `npm run build` first.");
+      process.exit(1);
+    }
+    if (!(await portIsFree(PORT))) {
+      console.error(`Port ${PORT} is already serving. Stop the leftover server first — otherwise these checks run against that build, not this one.`);
       process.exit(1);
     }
     server = spawn("npx", ["next", "start", "-p", String(PORT)], {
       cwd: root,
       stdio: "ignore",
-      env: { ...process.env },
+      // The suite creates throwaway @example.com accounts, so the server must not
+      // hold the real Resend key. Empty values are dropped by cmd.exe on Windows
+      // and .env.local would fill them back in, so a sentinel key is used instead:
+      // Resend rejects it and nothing is ever delivered.
+      env: { ...process.env, RESEND_API_KEY: SANDBOX_RESEND_KEY, RESEND_FROM_EMAIL: SANDBOX_RESEND_FROM },
       shell: process.platform === "win32",
     });
   }
@@ -141,6 +171,20 @@ async function main() {
   try {
     await waitForServer();
     console.log(`\nRunning Collabry integration tests against ${BASE_URL}\n`);
+
+    // --- Service health ----------------------------------------------------
+    console.log("Health:");
+    const healthResponse = await fetch(`${BASE_URL}/api/health`);
+    const health = await healthResponse.json();
+    check("health endpoint reports a connected database", health.services?.database === "connected", JSON.stringify(health.services ?? {}));
+    check("health endpoint reports private storage", health.services?.storage === "ready", health.services?.storage);
+    if (emailDisabledForRun) {
+      check(
+        "health endpoint reports the sandboxed email key as rejected",
+        health.services?.email === "invalid" && health.services?.emailSender === "unknown",
+        JSON.stringify(health.services ?? {}),
+      );
+    }
 
     // --- Users and the signup trigger -------------------------------------
     console.log("Accounts:");
@@ -261,6 +305,13 @@ async function main() {
     const inviteBody = await inviteResponse.json();
     check("A invites B", inviteResponse.status === 201, JSON.stringify(inviteBody).slice(0, 160));
     const token = inviteBody.inviteUrl?.split("/invite/")[1];
+    if (emailDisabledForRun) {
+      check(
+        "an undeliverable invitation says so instead of claiming delivery",
+        inviteBody.emailSent === false && /rejected the API key/i.test(inviteBody.emailReason ?? ""),
+        JSON.stringify({ emailSent: inviteBody.emailSent, emailReason: inviteBody.emailReason }),
+      );
+    }
 
     if (token) {
       const wrongRecipient = await sessionC.api("/api/invitations/accept", {
@@ -566,11 +617,62 @@ async function main() {
       const attendanceBody = await attendanceAsOwner.json();
       const bobPresent = (attendanceBody.attendees ?? []).some((row) => row.user_id === bob.id && row.attended === true);
       check("the owner marks B present", attendanceAsOwner.ok && bobPresent, JSON.stringify(attendanceBody).slice(0, 160));
+
+      if (env.CRON_SECRET) {
+        // The reminder job a day before the meeting would run, forced due now.
+        const jobKey = `integration-reminder-${RUN_ID}`;
+        const { data: reminderJob } = await admin
+          .from("scheduled_jobs")
+          .insert({
+            job_key: jobKey,
+            kind: "meeting_reminder",
+            run_at: new Date(Date.now() - 1000).toISOString(),
+            payload: { meetingId },
+          })
+          .select("id")
+          .single();
+        const cronRun = await fetch(`${BASE_URL}/api/jobs/run`, { method: "POST", headers: { Authorization: `Bearer ${env.CRON_SECRET}` } });
+        const cronBody = await cronRun.json();
+        check("the job runner accepts the cron bearer secret", cronRun.ok && cronBody.ok === true, JSON.stringify(cronBody).slice(0, 160));
+
+        const { data: settledJob } = await admin.from("scheduled_jobs").select("completed_at, last_error").eq("id", reminderJob?.id).maybeSingle();
+        check("the due meeting reminder completes instead of failing", !!settledJob?.completed_at, JSON.stringify(settledJob ?? {}));
+
+        const { data: reminderRows } = await admin
+          .from("notifications")
+          .select("user_id, kind, title")
+          .eq("resource_id", meetingId)
+          .eq("kind", "meeting");
+        check(
+          "the reminder notifies the meeting attendee",
+          (reminderRows ?? []).some((row) => row.user_id === bob.id && /^Reminder:/.test(row.title)),
+          JSON.stringify(reminderRows ?? []).slice(0, 200),
+        );
+
+        const rejectedRun = await fetch(`${BASE_URL}/api/jobs/run`, { method: "POST", headers: { Authorization: "Bearer wrong-secret" } });
+        check("the job runner rejects a wrong cron secret", rejectedRun.status === 401, `status ${rejectedRun.status}`);
+
+        await admin.from("scheduled_jobs").delete().eq("job_key", jobKey);
+      } else {
+        console.log("  skip  CRON_SECRET is not set in .env.local; scheduled-job checks skipped");
+      }
     }
   } finally {
     console.log("\nCleaning up test data...");
     await cleanup();
-    if (server) server.kill("SIGTERM");
+    if (server) {
+      if (process.platform === "win32") {
+        // server.kill() only stops the shell, leaving the Node child listening for
+        // the next run. Kill the whole tree, synchronously, before the process exits.
+        try {
+          execSync(`taskkill /PID ${server.pid} /T /F`, { stdio: "ignore" });
+        } catch {
+          server.kill("SIGTERM");
+        }
+      } else {
+        server.kill("SIGTERM");
+      }
+    }
   }
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

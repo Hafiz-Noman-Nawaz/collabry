@@ -6,6 +6,7 @@ import { badRequest, forbidden, notFound, unauthorized } from "@/lib/api";
 import { recordAudit } from "@/lib/audit";
 import { notifyTeam } from "@/lib/notify";
 import { scheduleMeetingReminder } from "@/lib/jobs";
+import { getPublicAppUrl } from "@/lib/app-url";
 import { loadProfiles, profileOf } from "@/lib/profiles";
 
 const updateSchema = z
@@ -69,7 +70,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
   const { data: current } = await supabase
     .from("meetings")
-    .select("id, team_id, title, starts_at, status")
+    .select("id, team_id, title, agenda, starts_at, ends_at, timezone, status, meeting_url")
     .eq("id", id)
     .maybeSingle();
   if (!current) return notFound("Meeting not found.");
@@ -110,15 +111,29 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       });
       const { data: attendees } = await supabase.from("meeting_attendees").select("user_id").eq("meeting_id", id);
       const recipientIds = (attendees ?? []).map((row) => row.user_id).filter((userId) => userId !== user.id);
+      const cancelled = parsed.data.status === "cancelled";
       if (recipientIds.length > 0) {
         await notifyTeam({
           userIds: recipientIds,
           teamId: current.team_id,
           kind: "meeting",
-          title: parsed.data.status === "cancelled" ? `Cancelled: ${current.title}` : `Updated: ${updated.title}`,
-          body: parsed.data.status === "cancelled" ? "This meeting has been cancelled." : `Starts ${new Date(updated.starts_at).toLocaleString()}`,
+          title: cancelled ? `Cancelled: ${current.title}` : `Updated: ${updated.title}`,
+          body: cancelled ? "This meeting has been cancelled." : `Starts ${new Date(updated.starts_at).toLocaleString()}`,
           resourceType: "meeting",
           resourceId: id,
+          organizerId: user.id,
+          meeting: {
+            action: cancelled ? "cancelled" : "updated",
+            details: {
+              title: String(cancelled ? current.title : updated.title),
+              agenda: String(updated.agenda ?? current.agenda ?? ""),
+              startsAt: String(updated.starts_at ?? current.starts_at),
+              endsAt: String(updated.ends_at ?? current.ends_at ?? ""),
+              timezone: String(updated.timezone ?? current.timezone ?? "UTC"),
+              joinUrl: String(updated.meeting_url ?? current.meeting_url ?? "") || null,
+              meetingUrl: `${getPublicAppUrl(request)}/meetings/${id}`,
+            },
+          },
         });
       }
       await scheduleMeetingReminder(updated);
@@ -149,6 +164,19 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
         body: `Starts ${new Date(current.starts_at).toLocaleString()}`,
         resourceType: "meeting",
         resourceId: id,
+        organizerId: user.id,
+        meeting: {
+          action: "added",
+          details: {
+            title: current.title,
+            agenda: current.agenda,
+            startsAt: current.starts_at,
+            endsAt: current.ends_at,
+            timezone: current.timezone,
+            joinUrl: current.meeting_url || null,
+            meetingUrl: `${getPublicAppUrl(request)}/meetings/${id}`,
+          },
+        },
       });
     }
     await recordAudit({ actorId: user.id, teamId: current.team_id, action: "meeting.attendees_changed", resourceType: "meeting", resourceId: id, metadata: { added: toAdd.length, removed: toRemove.length } });

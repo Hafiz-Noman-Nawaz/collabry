@@ -4,7 +4,7 @@
  * deployed host — that would send teammates to the developer's machine.
  */
 export function getPublicAppUrl(request: Request) {
-  const configured = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "") ?? "";
+  const configured = configuredAppUrl();
   const requestUrl = new URL(request.url);
   const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
   const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
@@ -17,6 +17,14 @@ export function getPublicAppUrl(request: Request) {
   const requestIsLocal = isLocalHost(dynamicOrigin);
   if (configuredIsLocal && !requestIsLocal) return dynamicOrigin;
   return configured;
+}
+
+/**
+ * The configured canonical origin, or null. Background jobs have no incoming
+ * request to derive a host from, so their emails depend on this value.
+ */
+export function configuredAppUrl() {
+  return process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "") ?? null;
 }
 
 function isLocalHost(value: string) {

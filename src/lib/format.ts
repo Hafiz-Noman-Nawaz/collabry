@@ -16,3 +16,14 @@ export function toDateTimeInput(iso: string | null) {
   const offset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
+
+/** Owner-facing wording after an invitation is created, including why a send failed. */
+export function invitationDeliveryMessage(
+  email: string,
+  result: { emailSent?: boolean; emailSkipped?: boolean; emailReason?: string; inviteUrl?: string },
+) {
+  if (result.emailSent) return `Invitation emailed to ${email}. They can accept it straight from their inbox.`;
+  const link = ` Share this link instead: ${result.inviteUrl ?? ""}`.trimEnd();
+  if (result.emailSkipped) return `Invitation created for ${email}, but that account turns off invitation emails.${link}`;
+  return `Invitation created for ${email}, but the email was not delivered. ${result.emailReason ?? "Check the email settings for this deployment."}${link}`;
+}

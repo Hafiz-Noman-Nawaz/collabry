@@ -75,21 +75,27 @@ export async function POST(request: Request) {
   const origin = getPublicAppUrl(request);
   const inviteUrl = `${origin}/invite/${token}`;
   let emailSent = false;
+  let emailSkipped = false;
+  let emailReason: string | undefined;
   try {
     // Honours the recipient's stored email_invitations preference when known.
-    emailSent = (
-      await sendInvitationEmailWithPreference({
-        to: parsed.data.email,
-        teamName: team?.name ?? "a Collabry team",
-        inviteUrl,
-        role: parsed.data.role,
-        userId: recipientId,
-        inviterName,
-        inviterEmail: authData.user.email ?? null,
-      })
-    ).sent;
-  } catch {
+    const outcome = await sendInvitationEmailWithPreference({
+      to: parsed.data.email,
+      teamName: team?.name ?? "a Collabry team",
+      inviteUrl,
+      role: parsed.data.role,
+      userId: recipientId,
+      inviterName,
+      inviterEmail: authData.user.email ?? null,
+    });
+    emailSent = outcome.sent;
+    emailSkipped = outcome.skipped;
+    emailReason = outcome.reason;
+    if (!outcome.sent && !outcome.skipped) console.error("[email] invitation delivery failed:", outcome.reason);
+  } catch (error) {
     emailSent = false;
+    emailReason = error instanceof Error ? error.message : "The email provider did not accept the message.";
+    console.error("[email] invitation delivery failed:", emailReason);
   }
-  return NextResponse.json({ invitation: data, inviteUrl, emailSent }, { status: 201 });
+  return NextResponse.json({ invitation: data, inviteUrl, emailSent, emailSkipped, emailReason }, { status: 201 });
 }

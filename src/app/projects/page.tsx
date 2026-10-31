@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { WorkspaceShell } from "@/components/WorkspaceShell";
 import { useWorkspace, WorkspaceTeam } from "@/lib/useWorkspace";
+import { invitationDeliveryMessage } from "@/lib/format";
 
 type Invitation = { id: string; invitee_email: string; role: string; status: string; expires_at: string };
 
@@ -147,11 +148,7 @@ function ProjectsScreen() {
     const result = await response.json();
     if (!response.ok) setMessage(result.error ?? "Unable to create the invitation.");
     else {
-      setMessage(
-        result.emailSent
-          ? `Invitation emailed to ${email}. They can accept it straight from their inbox.`
-          : `Invitation created for ${email}, but the email could not be sent. Share this link instead: ${result.inviteUrl}`,
-      );
+      setMessage(invitationDeliveryMessage(email, result));
       const list = await fetch(`/api/invitations?teamId=${inviteFor.id}`);
       if (list.ok) setInvitations((await list.json()).invitations ?? []);
       (event.target as HTMLFormElement).reset();

@@ -18,7 +18,7 @@ NEXT_PUBLIC_APP_URL=https://YOUR_DOMAIN
 CRON_SECRET
 ```
 
-4. Verify Resend with a domain you own, then confirm `GET /api/health` reports `database: connected` and `email: connected`.
+4. Verify Resend with a domain you own, then confirm `GET /api/health` reports `database: connected`, `email: connected` **and** `emailSender: verified`. A verified API key with an unverified sender still fails every send, which is why both are reported.
 5. Schedule `/api/jobs/run`. The route accepts `GET` (Vercel Cron) and `POST` (external schedulers) and authenticates with `x-cron-secret` or `Authorization: Bearer $CRON_SECRET`. `vercel.json` ships a once-daily schedule because the Vercel **Hobby** plan rejects anything more frequent; for timely reminders on Hobby, point a free external scheduler (cron-job.org, Upstash QStash, or a GitHub Actions schedule) at `https://YOUR_DOMAIN/api/jobs/run` every minute with the bearer header. On Pro the schedule can be `* * * * *`.
 6. Smoke-test the real artifact before switching DNS: `npm run build && npm run start`, then sign in, open a task and a meeting, and confirm `/api/health` is green.
 
@@ -50,6 +50,23 @@ RESEND_FROM_EMAIL=Collabry <notifications@mail.collabryy.tech>
 ```
 
 Supabase Auth: Site URL `https://collabryy.tech`, redirect URL `https://collabryy.tech/auth/callback`. Custom SMTP: `smtp.resend.com`, port `465`, username `resend`, password = Resend API key, sender `notifications@mail.collabryy.tech`, name `Collabry`. Without custom SMTP, confirmation emails stay on Supabase's shared sender and a few-per-hour limit.
+
+### Email Resend sends
+
+`src/lib/email.ts` renders one branded layout for every message, and `src/lib/notify.ts` fans them out to the people each event concerns:
+
+| Event | Recipients | Subject |
+| --- | --- | --- |
+| Project invitation | The invited address | `<inviter> invited you to join <project> on Collabry` |
+| Meeting scheduled | Attendees, minus the organiser | `Meeting scheduled: <title> — <weekday, date>` |
+| Meeting rescheduled | Attendees | `Meeting rescheduled: <title> — <weekday, date>` |
+| Meeting cancelled | Attendees | `Meeting cancelled: <title>` (no time table, no button) |
+| Attendee added | The new attendee | `You've been added to <title> — <weekday, date>` |
+| Reminder, 24 hours before | Team members | `Reminder: <title> starts tomorrow at <time>` |
+
+Meeting times use the time zone stored on the meeting, so a session scheduled in `Asia/Karachi` prints Karachi time for everyone. Each send honours the recipient's stored `email_invitations` / `email_meetings` preference. Delivery never blocks the action that triggered it: an invitation is still created and the UI shows the shareable link plus the provider's own reason ("the sender address is not on a domain verified with Resend"), and a meeting is still saved even when the provider is unreachable. Reminder emails need `NEXT_PUBLIC_APP_URL`; without a canonical host there is nothing to link to, so the job records the in-app notification and logs the skip.
+
+`npm run test:integration` boots the server with a deliberately invalid Resend key so the suite can never send live mail to its throwaway `@example.com` accounts; it asserts the rejected-key reason reaches the API response. The unit suite (`npm run test:unit`) covers the copy, escaping, time-zone formatting and every provider failure message.
 
 
 ## Local Development
@@ -122,7 +139,7 @@ npm run typecheck
 npm run build
 npm run verify:db        # checks all migrations, RLS and private buckets
 npm run test:unit        # validation and authorization helpers
-npm run test:integration # boots the app: 72 checks with 3 throwaway users, then cleans up
+npm run test:integration # boots the app: 82 checks with 3 throwaway users, then cleans up
 npm test                 # unit + integration
 ```
 
@@ -130,10 +147,13 @@ npm test                 # unit + integration
 users in the configured Supabase project. It covers cross-team isolation, private
 files, invitations, rate limiting, the audit trail, team chat, and the task/meeting
 detail endpoints (author-only comment edits, reviewer roles, assignee-scoped action
-items, manager-only minutes and attendance). Set `CRON_SECRET` to exercise the
-scheduled-job endpoint (`POST /api/jobs/run`). The Resend probe in `verify:db` needs
+items, manager-only minutes and attendance) and the scheduled-job endpoint (a due meeting
+reminder, the notification it produces, and the cron secret guard) when `CRON_SECRET` is
+set. The suite boots its own server with a Resend key that cannot deliver, so it never
+sends live mail. The Resend probe in `verify:db` needs
 outbound HTTPS; on a network that cannot reach `api.resend.com` it reports a single
-network failure while every database check still runs.
+network failure while every database check still runs. `verify:db` also confirms that the
+domain in `RESEND_FROM_EMAIL` is one of the verified sending domains on the Resend account.
 
 ## Implemented
 
@@ -155,6 +175,7 @@ network failure while every database check still runs.
 - [x] Private Storage bucket policies and file-library UI.
 - [x] Notifications API, unread state, and mark-as-read UI.
 - [x] Server-only Resend invitation email integration.
+- [x] Resend meeting emails: scheduled, rescheduled, cancelled, added and the 24-hour reminder, with preference enforcement and provider reasons surfaced.
 - [x] Team member directory and protected member removal.
 - [x] PWA manifest and production service-worker shell.
 - [x] Navigation to dashboard, messages, files, and team routes.
@@ -187,7 +208,8 @@ network failure while every database check still runs.
 
 - [ ] Add production Supabase and Resend environment variables in the deployment platform.
 - [ ] Apply and verify all seven Supabase migrations in the production project.
-- [ ] Verify Resend sender domain and production email delivery.
+- [ ] Verify Resend sender domain and production email delivery. `mail.collabryy.tech` is verified; the deployment must send from it, so `RESEND_FROM_EMAIL=Collabry <notifications@mail.collabryy.tech>` has to match (a sender on any other domain fails every send with HTTP 403).
+- [ ] Set `NEXT_PUBLIC_APP_URL=https://collabryy.tech` in production. Without it, invitation links take the host of whichever request created them (`www` before the apex redirect) and scheduled reminder emails are skipped for lack of a canonical link.
 - [ ] Configure production Supabase Auth site URL and redirect URLs.
 - [ ] Confirm private Storage buckets and Storage policies in production.
 - [ ] Rotate any secrets that were exposed during development or chat.
@@ -222,7 +244,7 @@ network failure while every database check still runs.
 
 ### Quality
 
-- [x] Add unit tests for validation and authorization helpers (`npm run test:unit`).
+- [x] Add unit tests for validation, authorization and email helpers (`npm run test:unit`).
 - [x] Add Supabase integration tests for RLS and cross-team isolation.
 - [ ] Add Playwright end-to-end tests for signup, team creation, invitation acceptance, task creation, meetings, chat, and private files.
 - [ ] Run accessibility checks with keyboard navigation and screen readers.
@@ -256,12 +278,12 @@ Current implemented areas include:
 - Team creation, roles, invitations, and RLS
 - Tasks (detail screen with checklist, comments, reviews, file links), meetings (detail screen with minutes, decisions, action items, attendance), conversations with realtime messages
 - Private files, signed downloads, Storage policies
-- Notifications, Resend invitation email integration
+- Notifications, Resend emails for invitations and meeting changes/reminders
 - Team directory, Projects/Timeline/Reports/Settings screens, PWA shell, and premium responsive UI with a mobile burger drawer
 
 Remaining work before launch:
 1. Apply the seven migrations and set the environment variables in the production Supabase project and host.
-2. Verify the Resend sender domain and confirm `GET /api/health` returns `email: connected`.
+2. Verify the Resend sender domain and confirm `GET /api/health` returns `email: connected` and `emailSender: verified`.
 3. Set `CRON_SECRET` and schedule `POST /api/jobs/run` every minute.
 4. Add Playwright coverage for signup, invitations, task/meeting detail screens, chat and file upload.
 5. Run an accessibility pass with keyboard navigation and a screen reader.

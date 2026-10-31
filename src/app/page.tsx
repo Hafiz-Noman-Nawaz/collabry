@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { WorkspaceShell } from "@/components/WorkspaceShell";
+import { invitationDeliveryMessage } from "@/lib/format";
 import { createClient } from "@/lib/supabase/browser";
 
 type Team = {
@@ -199,11 +200,7 @@ export default function Home() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Unable to create invitation.");
-      setInviteMessage(
-        result.emailSent
-          ? `Invitation emailed to ${inviteEmail.trim()}. They can accept it straight from their inbox.`
-          : `Invitation created for ${inviteEmail.trim()}, but the email could not be sent. Share this link instead:\n${result.inviteUrl}`,
-      );
+      setInviteMessage(invitationDeliveryMessage(inviteEmail.trim(), result));
       setInviteEmail("");
     } catch (error) {
       setInviteMessage(error instanceof Error ? error.message : "Unable to create invitation.");
