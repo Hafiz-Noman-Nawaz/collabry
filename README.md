@@ -19,7 +19,7 @@ CRON_SECRET
 ```
 
 4. Verify Resend with a domain you own, then confirm `GET /api/health` reports `database: connected` and `email: connected`.
-5. Schedule `POST /api/jobs/run` every minute with header `Authorization: Bearer $CRON_SECRET` (Vercel Cron uses `vercel.json` when `CRON_SECRET` is set).
+5. Schedule `/api/jobs/run`. The route accepts `GET` (Vercel Cron) and `POST` (external schedulers) and authenticates with `x-cron-secret` or `Authorization: Bearer $CRON_SECRET`. `vercel.json` ships a once-daily schedule because the Vercel **Hobby** plan rejects anything more frequent; for timely reminders on Hobby, point a free external scheduler (cron-job.org, Upstash QStash, or a GitHub Actions schedule) at `https://YOUR_DOMAIN/api/jobs/run` every minute with the bearer header. On Pro the schedule can be `* * * * *`.
 6. Smoke-test the real artifact before switching DNS: `npm run build && npm run start`, then sign in, open a task and a meeting, and confirm `/api/health` is green.
 
 ### Routes
@@ -218,7 +218,7 @@ network failure while every database check still runs.
 - [x] Add security headers and a production-compatible Content Security Policy.
 - [x] Add audit-log assertions for role, membership, project, and permission changes.
 - [x] Add error monitoring, backups, and deployment health checks (`GET /api/health` and `GET /api/jobs/run`).
-- [ ] Set `CRON_SECRET` in the deployment platform and schedule `POST /api/jobs/run` every minute.
+- [ ] Set `CRON_SECRET` in the deployment platform and schedule `/api/jobs/run` at least every five minutes (Vercel Hobby caps native crons at once per day; use an external scheduler there).
 
 ### Quality
 

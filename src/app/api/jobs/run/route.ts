@@ -9,25 +9,29 @@ function cronSecretMatches(provided: string) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-/**
- * Cron entry point. Protected by CRON_SECRET; a platform scheduler should POST
- * here every minute. Jobs are claimed with an optimistic lock, so overlapping
- * runs are safe and retries/backoff are handled inside runDueJobs.
- */
-export async function POST(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  const provided =
+function providedSecret(request: Request) {
+  return (
     request.headers.get("x-cron-secret") ??
     request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
-    "";
+    ""
+  );
+}
 
+/**
+ * Cron entry point. Protected by CRON_SECRET and callable with either method:
+ * Vercel Cron uses GET with an Authorization header, while external schedulers
+ * commonly POST. Jobs are claimed with an optimistic lock, so overlapping runs
+ * are safe and retries/backoff are handled inside runDueJobs.
+ */
+async function runJobs(request: Request) {
+  const secret = process.env.CRON_SECRET;
   if (!secret) {
     return NextResponse.json(
       { error: "CRON_SECRET is not configured. Set it in the deployment platform, then retry with the x-cron-secret header." },
       { status: 503 },
     );
   }
-  if (!cronSecretMatches(provided)) return NextResponse.json({ error: "Invalid cron secret." }, { status: 401 });
+  if (!cronSecretMatches(providedSecret(request))) return NextResponse.json({ error: "Invalid cron secret." }, { status: 401 });
 
   try {
     await ensureInvitationSweep();
@@ -38,10 +42,10 @@ export async function POST(request: Request) {
   }
 }
 
-/** Reports the queue depth for health checks; requires the same secret. */
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  const provided = request.headers.get("x-cron-secret") ?? "";
-  if (!secret || !cronSecretMatches(provided)) return NextResponse.json({ error: "Invalid cron secret." }, { status: 401 });
-  return NextResponse.json({ ok: true, configured: true });
+  return runJobs(request);
+}
+
+export async function POST(request: Request) {
+  return runJobs(request);
 }
