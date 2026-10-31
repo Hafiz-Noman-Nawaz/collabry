@@ -58,6 +58,9 @@ export async function POST(request: Request) {
   const { data: membership } = await supabase.from("team_members").select("role").eq("team_id", parsed.data.teamId).eq("user_id", authData.user.id).maybeSingle();
   if (!membership || !["owner", "leader"].includes(membership.role)) return NextResponse.json({ error: "You cannot invite members to this team." }, { status: 403 });
   const { data: team } = await supabase.from("teams").select("name").eq("id", parsed.data.teamId).single();
+  const { data: inviterProfile } = await supabase.from("profiles").select("full_name").eq("id", authData.user.id).maybeSingle();
+  const inviterName =
+    inviterProfile?.full_name?.trim() || authData.user.user_metadata?.full_name || authData.user.email?.split("@")[0] || null;
 
   // If the address already belongs to a user, their stored preferences apply.
   const recipientId = await lookupRecipientId(parsed.data.email);
@@ -81,6 +84,8 @@ export async function POST(request: Request) {
         inviteUrl,
         role: parsed.data.role,
         userId: recipientId,
+        inviterName,
+        inviterEmail: authData.user.email ?? null,
       })
     ).sent;
   } catch {

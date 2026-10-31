@@ -86,7 +86,15 @@ export async function teamMemberIds(teamId: string) {
  * Invitation email delivery honours the recipient's email_invitations
  * preference. Returns whether the message was handed to the provider.
  */
-export async function sendInvitationEmailWithPreference(input: { to: string; teamName: string; inviteUrl: string; role: string; userId?: string | null }) {
+export async function sendInvitationEmailWithPreference(input: {
+  to: string;
+  teamName: string;
+  inviteUrl: string;
+  role: string;
+  userId?: string | null;
+  inviterName?: string | null;
+  inviterEmail?: string | null;
+}) {
   try {
     const admin = createAdminClient();
     if (input.userId) {
@@ -100,5 +108,12 @@ export async function sendInvitationEmailWithPreference(input: { to: string; tea
   } catch {
     // Preference lookup failure must not block delivery.
   }
-  return sendInvitationEmail({ to: input.to, teamName: input.teamName, inviteUrl: input.inviteUrl, role: input.role });
+  return sendInvitationEmail({
+    to: input.to,
+    teamName: input.teamName,
+    inviteUrl: input.inviteUrl,
+    role: input.role,
+    inviterName: input.inviterName,
+    inviterEmail: input.inviterEmail,
+  });
 }

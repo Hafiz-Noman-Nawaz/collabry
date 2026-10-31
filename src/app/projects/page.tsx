@@ -113,19 +113,24 @@ function ProjectsScreen() {
     setBusy(true);
     setMessage("");
     const form = new FormData(event.currentTarget);
+    const email = String(form.get("email") ?? "").trim();
     const response = await fetch("/api/invitations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         teamId: inviteFor.id,
-        email: String(form.get("email") ?? ""),
+        email,
         role: String(form.get("role") ?? "member"),
       }),
     });
     const result = await response.json();
     if (!response.ok) setMessage(result.error ?? "Unable to create the invitation.");
     else {
-      setMessage(`Invitation created. Share this link: ${result.inviteUrl}`);
+      setMessage(
+        result.emailSent
+          ? `Invitation emailed to ${email}. They can accept it straight from their inbox.`
+          : `Invitation created for ${email}, but the email could not be sent. Share this link instead: ${result.inviteUrl}`,
+      );
       const list = await fetch(`/api/invitations?teamId=${inviteFor.id}`);
       if (list.ok) setInvitations((await list.json()).invitations ?? []);
       (event.target as HTMLFormElement).reset();
@@ -259,7 +264,7 @@ function ProjectsScreen() {
             <button className="modal-close" aria-label="Close" onClick={() => setInviteFor(null)}>×</button>
             <p className="overline">{inviteFor.name.toUpperCase()}</p>
             <h2 id="invite-project-title">Invite a collaborator</h2>
-            <p className="modal-copy">Invitations expire after 72 hours and never grant access before acceptance.</p>
+            <p className="modal-copy">We&apos;ll email them a secure Collabry invitation right away. It expires after 72 hours and never grants access before acceptance.</p>
             <form onSubmit={sendInvitation}>
               <label>Email address<input name="email" type="email" required placeholder="person@university.edu" /></label>
               <label>Role
@@ -272,7 +277,7 @@ function ProjectsScreen() {
               </label>
               <div className="modal-actions">
                 <button type="button" className="cancel-button" onClick={() => setInviteFor(null)}>Close</button>
-                <button className="new-project" disabled={busy}>{busy ? "Creating..." : "Create invitation"}</button>
+                <button className="new-project" disabled={busy}>{busy ? "Sending..." : "Send invitation"}</button>
               </div>
             </form>
             {invitations.length > 0 && (

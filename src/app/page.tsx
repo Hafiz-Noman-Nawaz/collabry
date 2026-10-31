@@ -199,7 +199,11 @@ export default function Home() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Unable to create invitation.");
-      setInviteMessage(`Invitation created. Share this link with your teammate:\n${result.inviteUrl}`);
+      setInviteMessage(
+        result.emailSent
+          ? `Invitation emailed to ${inviteEmail.trim()}. They can accept it straight from their inbox.`
+          : `Invitation created for ${inviteEmail.trim()}, but the email could not be sent. Share this link instead:\n${result.inviteUrl}`,
+      );
       setInviteEmail("");
     } catch (error) {
       setInviteMessage(error instanceof Error ? error.message : "Unable to create invitation.");
@@ -616,7 +620,7 @@ export default function Home() {
             <button className="modal-close" aria-label="Close" onClick={() => setInviteTeam(null)}>✕</button>
             <p className="overline">{inviteTeam.name.toUpperCase()}</p>
             <h2>Invite a collaborator</h2>
-            <p className="modal-copy">Invitations expire after 72 hours and require email verification to join.</p>
+            <p className="modal-copy">We&apos;ll email them a secure Collabry invitation right away. It expires after 72 hours and requires email verification to join.</p>
             <label>
               Email address
               <input
@@ -652,7 +656,7 @@ export default function Home() {
                 disabled={inviting || !inviteEmail.trim()}
                 onClick={sendInvitation}
               >
-                {inviting ? "Creating..." : "Create invitation"}
+                {inviting ? "Sending..." : "Send invitation"}
               </button>
             </div>
           </section>
