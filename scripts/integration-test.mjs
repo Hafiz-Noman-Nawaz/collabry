@@ -211,6 +211,9 @@ async function main() {
     });
     check("B cannot change roles in A's project", !roleChangeAsB.ok, `status ${roleChangeAsB.status}`);
 
+    const deleteAsOutsider = await sessionB.api(`/api/teams/${teamA}`, { method: "DELETE" });
+    check("an outsider cannot delete A's project", deleteAsOutsider.status === 404 || deleteAsOutsider.status === 403, `status ${deleteAsOutsider.status}`);
+
     const teamsAsB = await sessionB.api("/api/teams");
     const teamsBody = await teamsAsB.json();
     check("B's project list excludes A's project", (teamsBody.teams ?? []).every((team) => team.id !== teamA));
@@ -271,6 +274,9 @@ async function main() {
         body: JSON.stringify({ token }),
       });
       check("B accepts the invitation", accept.ok, `status ${accept.status}`);
+
+      const deleteAsMember = await sessionB.api(`/api/teams/${teamA}`, { method: "DELETE" });
+      check("a member who is not the owner cannot delete the project", deleteAsMember.status === 403, `status ${deleteAsMember.status}`);
 
       const repeat = await sessionB.api("/api/invitations/accept", {
         method: "POST",

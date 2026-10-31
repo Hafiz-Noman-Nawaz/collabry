@@ -160,9 +160,9 @@ export default function TimelinePage() {
         <div>
           <p className="overline">TIMELINE / CALENDAR</p>
           <h1>Timeline</h1>
-          <p>Deadlines, meetings and announcements from your project database.</p>
+          <p>Deadlines, meetings and announcements for this project.</p>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div className="heading-actions">
           <button
             className="ghost"
             onClick={() => {
@@ -171,7 +171,7 @@ export default function TimelinePage() {
               setMessage("");
             }}
           >
-            📢 Post announcement
+            Post announcement
           </button>
           <button
             className="new-project"
@@ -203,7 +203,7 @@ export default function TimelinePage() {
       {showAnnouncementForm && (
         <section className="panel" style={{ marginBottom: 20 }}>
           <h2>Broadcast announcement</h2>
-          <p className="panel-sub">TEAM MEMBERS RECEIVE AN INSTANT NOTIFICATION</p>
+          <p className="panel-sub">Everyone on the team is notified right away.</p>
           <form className="form-grid" onSubmit={postAnnouncement}>
             <label>Headline<input name="title" required maxLength={200} placeholder="e.g. Midterm report submission deadline updated" /></label>
             <label>Details<textarea name="body" rows={4} required maxLength={10000} placeholder="Describe the announcement, expectations, and any next steps..." /></label>
@@ -218,7 +218,7 @@ export default function TimelinePage() {
       {showMeetingForm && (
         <section className="panel" style={{ marginBottom: 20 }}>
           <h2>Schedule a meeting</h2>
-          <p className="panel-sub">TIMES ARE STORED WITH YOUR LOCAL TIMEZONE</p>
+          <p className="panel-sub">Times use your local time zone.</p>
           <form className="form-grid" onSubmit={scheduleMeeting}>
             <label>Title<input name="title" required maxLength={200} placeholder="e.g. Supervisor check-in" /></label>
             <label>Agenda<textarea name="agenda" rows={3} placeholder="What should the team prepare?" /></label>
@@ -271,7 +271,7 @@ export default function TimelinePage() {
                   <time>{new Date(item.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time>
                 </div>
                 {item.kind === "meeting" && item.status === "scheduled" && (
-                  <div className="row-actions" style={{ marginLeft: "auto", alignSelf: "center" }}>
+                  <div className="row-actions timeline-actions">
                     <button onClick={() => rsvp(item.id, "accepted")} style={rsvpState[item.id] === "accepted" ? { background: "#31d9ed20", color: "#52dbe7" } : undefined}>Accept</button>
                     <button className="muted" onClick={() => rsvp(item.id, "tentative")}>Maybe</button>
                     <button className="muted" onClick={() => rsvp(item.id, "declined")}>Decline</button>

@@ -42,9 +42,9 @@ function LoginForm() {
     <main className="auth-page">
       <section className="auth-panel">
         <div className="auth-brand"><Image src="/collabry-mark.svg" alt="Collabry" width={34} height={34} priority /> <span>Collabry</span></div>
-        <p className="eyebrow">Project collaboration, with context</p>
-        <h1>{mode === "login" ? "Welcome back." : "Start your workspace."}</h1>
-        <p className="auth-copy">Keep your team, supervisor, deadlines, and decisions moving in one calm place.</p>
+        <p className="eyebrow">Project collaboration for university teams</p>
+        <h1>{mode === "login" ? "Welcome back." : "Create your account."}</h1>
+        <p className="auth-copy">Tasks, meetings, files and messages for your project team, in one place.</p>
         <form onSubmit={submit} className="auth-form">
           {mode === "signup" && <label>Full name<input required value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" /></label>}
           <label>Email address<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" /></label>
@@ -54,7 +54,7 @@ function LoginForm() {
         {message && <p className="auth-message" role="status">{message}</p>}
         <button className="auth-switch" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setMessage(""); }}>{mode === "login" ? "New to Collabry? Create an account" : "Already have an account? Sign in"}</button>
       </section>
-      <aside className="auth-aside"><span className="aside-kicker">COLLABRY WORKSPACE</span><h2>A better place for the work between the meetings.</h2><p>Tasks, files, conversations, and project decisions stay connected to the people doing the work.</p><div className="aside-rule" /><small>Built for independent teams across universities.</small></aside>
+      <aside className="auth-aside"><span className="aside-kicker">COLLABRY WORKSPACE</span><h2>Everything your project team needs, in one place.</h2><p>Plan tasks, schedule meetings, share files and keep decisions next to the work they belong to.</p><div className="aside-rule" /><small>Built for final-year project teams and research groups.</small></aside>
     </main>
   );
 }

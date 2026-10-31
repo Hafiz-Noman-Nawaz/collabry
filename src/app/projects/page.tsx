@@ -18,6 +18,7 @@ function ProjectsScreen() {
   const [page, setPage] = useState(0);
   const [showCreate, setShowCreate] = useState(() => searchParams.get("new") === "1");
   const [settingsFor, setSettingsFor] = useState<WorkspaceTeam | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [inviteFor, setInviteFor] = useState<WorkspaceTeam | null>(null);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [message, setMessage] = useState("");
@@ -107,6 +108,26 @@ function ProjectsScreen() {
     setBusy(false);
   }
 
+  async function deleteProject() {
+    if (!settingsFor) return;
+    setBusy(true);
+    setMessage("");
+    const projectName = settingsFor.name;
+    const response = await fetch(`/api/teams/${settingsFor.id}`, { method: "DELETE" });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(result.error ?? "Unable to delete the project.");
+      setBusy(false);
+      return;
+    }
+    setDeleteOpen(false);
+    setSettingsFor(null);
+    setPage(0);
+    setMessage(`${projectName} was deleted.`);
+    await refresh();
+    setBusy(false);
+  }
+
   async function sendInvitation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!inviteFor) return;
@@ -142,7 +163,7 @@ function ProjectsScreen() {
     <WorkspaceShell active="Projects">
       <div className="screen-heading">
         <div>
-          <p className="overline">PROJECTS / WORKSPACES</p>
+          <p className="overline">PROJECTS</p>
           <h1>Projects</h1>
           <p>Every project you belong to, with search, filtering and owner settings.</p>
         </div>
@@ -217,7 +238,7 @@ function ProjectsScreen() {
         <div className="modal-backdrop" role="presentation">
           <section className="project-modal" role="dialog" aria-modal="true" aria-labelledby="create-project-title">
             <button className="modal-close" aria-label="Close" onClick={() => setShowCreate(false)}>×</button>
-            <p className="overline">NEW WORKSPACE</p>
+            <p className="overline">NEW PROJECT</p>
             <h2 id="create-project-title">Create a project</h2>
             <p className="modal-copy">Start a private project space, then invite your supervisor and teammates.</p>
             <form onSubmit={createProject}>
@@ -240,7 +261,7 @@ function ProjectsScreen() {
             <button className="modal-close" aria-label="Close" onClick={() => setSettingsFor(null)}>×</button>
             <p className="overline">PROJECT SETTINGS</p>
             <h2 id="project-settings-title">{settingsFor.name}</h2>
-            <p className="modal-copy">Owner-only settings. Changes are audited and enforced by RLS.</p>
+            <p className="modal-copy">Only the project owner can change these details. Every change is recorded in the audit log.</p>
             <form onSubmit={saveSettings}>
               <label>Name<input name="name" required minLength={2} defaultValue={settingsFor.name} /></label>
               <label>Description<textarea name="description" rows={3} defaultValue={settingsFor.description} /></label>
@@ -254,6 +275,33 @@ function ProjectsScreen() {
                 <button className="new-project" disabled={busy}>{busy ? "Saving..." : "Save settings"}</button>
               </div>
             </form>
+            <div className="danger-zone">
+              <div>
+                <strong>Delete this project</strong>
+                <p>Permanently removes the project, its tasks, meetings, chat and files for every member.</p>
+              </div>
+              <button type="button" className="danger-button" onClick={() => setDeleteOpen(true)}>Delete project</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {settingsFor && deleteOpen && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="project-modal project-modal-compact" role="alertdialog" aria-modal="true" aria-labelledby="delete-project-title">
+            <p className="overline">PERMANENT ACTION</p>
+            <h2 id="delete-project-title">Delete “{settingsFor.name}”?</h2>
+            <p className="modal-copy">
+              This cannot be undone. All tasks, meetings, conversations, files and member access will be removed, and invited
+              collaborators will lose access immediately.
+            </p>
+            {message && <p className="screen-message error" role="status">{message}</p>}
+            <div className="modal-actions">
+              <button type="button" className="cancel-button" onClick={() => setDeleteOpen(false)} disabled={busy}>Cancel</button>
+              <button type="button" className="danger-button solid" onClick={deleteProject} disabled={busy}>
+                {busy ? "Deleting..." : "Delete permanently"}
+              </button>
+            </div>
           </section>
         </div>
       )}

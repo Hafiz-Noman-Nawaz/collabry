@@ -21,7 +21,7 @@ function InvitationAccept() {
     setBusy(false);
   }
 
-  return <section className="invite-panel"><Image src="/collabry-mark.svg" alt="Collabry" width={42} height={42} priority /><p className="overline">COLLABRY INVITATION</p><h1>You&apos;ve been invited to collaborate.</h1><p>Join the project workspace and keep the work connected to the people doing it.</p><button className="new-project" onClick={accept} disabled={busy}>{busy ? "Accepting..." : "Accept invitation"}</button>{message && <p className="invite-error" role="status">{message}</p>}<Link href="/login">Sign in with a different account</Link></section>;
+  return <section className="invite-panel"><Image src="/collabry-mark.svg" alt="Collabry" width={42} height={42} priority /><p className="overline">COLLABRY INVITATION</p><h1>You&apos;ve been invited to collaborate.</h1><p>Join the project workspace to see its tasks, meetings, files and conversations.</p><button className="new-project" onClick={accept} disabled={busy}>{busy ? "Accepting..." : "Accept invitation"}</button>{message && <p className="invite-error" role="status">{message}</p>}<Link href="/login">Sign in with a different account</Link></section>;
 }
 
 export default function InvitationPage() {

@@ -48,8 +48,9 @@ export function useWorkspace() {
       } else {
         const result = await response.json();
         if (!cancelled) {
-          setTeams(result.teams ?? []);
-          setTeamId((current) => current || result.teams?.[0]?.id || "");
+          const rows: WorkspaceTeam[] = result.teams ?? [];
+          setTeams(rows);
+          setTeamId((current) => (rows.some((row) => row.id === current) ? current : rows[0]?.id ?? ""));
         }
       }
       if (!cancelled) setReady(true);
@@ -64,8 +65,9 @@ export function useWorkspace() {
     const response = await fetch("/api/teams?limit=50");
     if (response.ok) {
       const result = await response.json();
-      setTeams(result.teams ?? []);
-      setTeamId((current) => current || result.teams?.[0]?.id || "");
+      const rows: WorkspaceTeam[] = result.teams ?? [];
+      setTeams(rows);
+      setTeamId((current) => (rows.some((row) => row.id === current) ? current : rows[0]?.id ?? ""));
     }
   }, []);
 

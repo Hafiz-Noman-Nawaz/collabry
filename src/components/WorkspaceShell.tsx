@@ -257,7 +257,7 @@ export function WorkspaceShell({
         <div className="collabry-brand">
           <Image src="/collabry-mark.svg" alt="Collabry" width={34} height={34} priority />
           <span>
-            Collabry<small>THE PROJECT ENGINE</small>
+            Collabry<small>PROJECT WORKSPACE</small>
           </span>
         </div>
         <button className="sidebar-search" type="button" onClick={() => setSearchOpen(true)}>
@@ -283,7 +283,7 @@ export function WorkspaceShell({
               <div className="collabry-brand" style={{ padding: 0 }}>
                 <Image src="/collabry-mark.svg" alt="Collabry" width={30} height={30} priority />
                 <span>
-                  Collabry<small>THE PROJECT ENGINE</small>
+                  Collabry<small>PROJECT WORKSPACE</small>
                 </span>
               </div>
               <button className="mobile-drawer-close" onClick={() => setMobileMenuOpen(false)} aria-label="Close menu">

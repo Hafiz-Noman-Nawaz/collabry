@@ -56,9 +56,9 @@ export default function ReportsPage() {
     <WorkspaceShell active="Reports">
       <div className="screen-heading">
         <div>
-          <p className="overline">REPORTS / ANALYTICS</p>
+          <p className="overline">REPORTS</p>
           <h1>Reports</h1>
-          <p>Computed from live database figures for the selected project, not sample data.</p>
+          <p>Task, submission and team figures for the selected project.</p>
         </div>
         <button className="new-project" disabled={!teamId} onClick={() => window.open(`/api/reports?teamId=${teamId}&format=csv`, "_blank", "noopener,noreferrer")}>
           ↓ Export CSV
@@ -68,8 +68,15 @@ export default function ReportsPage() {
       {message && <p className="screen-message error" role="status">{message}</p>}
       {error && <p className="screen-message error" role="status">{error}</p>}
 
-      {!ready || !report ? (
-        <div className="screen-empty"><strong>Crunching numbers...</strong></div>
+      {!ready ? (
+        <div className="screen-empty"><strong>Loading report…</strong></div>
+      ) : !teamId ? (
+        <div className="screen-empty">
+          <strong>No project selected</strong>
+          <p>Create a project to see task, submission and team figures.</p>
+        </div>
+      ) : !report ? (
+        <div className="screen-empty"><strong>Preparing the report…</strong></div>
       ) : (
         <>
           <section className="stat-grid">
@@ -84,7 +91,7 @@ export default function ReportsPage() {
           <div className="report-grid">
             <section className="panel">
               <h2>Tasks by status</h2>
-              <p className="panel-sub">LIVE COUNT FROM THE TASKS TABLE</p>
+              <p className="panel-sub">Tasks in each stage</p>
               <BarRow label="To do" value={report.tasks.byStatus.todo ?? 0} max={statusMax} />
               <BarRow label="In progress" value={report.tasks.byStatus.in_progress ?? 0} max={statusMax} />
               <BarRow label="In review" value={report.tasks.byStatus.in_review ?? 0} max={statusMax} />
@@ -93,7 +100,7 @@ export default function ReportsPage() {
 
             <section className="panel">
               <h2>Tasks by priority</h2>
-              <p className="panel-sub">WHERE THE PRESSURE SITS</p>
+              <p className="panel-sub">Tasks grouped by priority</p>
               <BarRow label="Urgent" value={report.tasks.byPriority.urgent ?? 0} max={priorityMax} />
               <BarRow label="High" value={report.tasks.byPriority.high ?? 0} max={priorityMax} />
               <BarRow label="Medium" value={report.tasks.byPriority.medium ?? 0} max={priorityMax} cyan />
@@ -102,7 +109,7 @@ export default function ReportsPage() {
 
             <section className="panel">
               <h2>Submissions</h2>
-              <p className="panel-sub">FILE REVIEW PIPELINE</p>
+              <p className="panel-sub">Files moving through review</p>
               <BarRow label="Draft" value={report.files.bySubmission.draft ?? 0} max={submissionMax} />
               <BarRow label="Submitted" value={report.files.bySubmission.submitted ?? 0} max={submissionMax} />
               <BarRow label="Approved" value={report.files.bySubmission.approved ?? 0} max={submissionMax} cyan />
@@ -111,7 +118,7 @@ export default function ReportsPage() {
 
             <section className="panel">
               <h2>Team composition</h2>
-              <p className="panel-sub">MEMBERS BY ROLE</p>
+              <p className="panel-sub">Team members by role</p>
               {Object.keys(report.team.byRole).length === 0 ? (
                 <p className="panel-sub">No members yet.</p>
               ) : (
@@ -122,7 +129,7 @@ export default function ReportsPage() {
             </section>
           </div>
 
-          <p className="panel-sub">REPORT GENERATED {new Date(report.generatedAt).toLocaleString()}</p>
+          <p className="panel-sub">Generated {new Date(report.generatedAt).toLocaleString()}</p>
         </>
       )}
     </WorkspaceShell>

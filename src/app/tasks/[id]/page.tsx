@@ -307,7 +307,7 @@ function TaskScreen() {
 
       <section className="panel">
         <h2>Details</h2>
-        <p className="panel-sub">SAVED TO THE TASKS TABLE</p>
+        <p className="panel-sub">Everyone on the project sees these details.</p>
         <form className="form-grid" onSubmit={saveDetails}>
           <label>
             Title
@@ -364,9 +364,9 @@ function TaskScreen() {
 
       <section className="panel">
         <h2>Checklist</h2>
-        <p className="panel-sub">{totalItems > 0 ? `${doneCount} of ${totalItems} complete` : "BREAK THE WORK INTO STEPS"}</p>
+        <p className="panel-sub">{totalItems > 0 ? `${doneCount} of ${totalItems} complete` : "No steps added yet."}</p>
         <form className="form-grid" onSubmit={addChecklist} style={{ marginBottom: 14 }}>
-          <div className="form-grid two" style={{ gridTemplateColumns: "1fr auto", alignItems: "end" }}>
+          <div className="form-grid inline-form-row two">
             <label>
               New step
               <input value={checklistBody} onChange={(event) => setChecklistBody(event.target.value)} maxLength={200} placeholder="e.g. Draft methodology section" />
@@ -441,7 +441,7 @@ function TaskScreen() {
 
       <section className="panel">
         <h2>Review</h2>
-        <p className="panel-sub">REVIEWERS DECIDE, EVERYONE SEES THE HISTORY</p>
+        <p className="panel-sub">Approvals and change requests stay in the history.</p>
         <div className="form-grid" style={{ marginBottom: 14 }}>
           <div className="form-grid two" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
             {canReview ? (
@@ -481,7 +481,7 @@ function TaskScreen() {
 
       <section className="panel">
         <h2>Attachments</h2>
-        <p className="panel-sub">LINK THIS TASK TO FILES YOUR TEAM SUBMITTED</p>
+        <p className="panel-sub">Files your team submitted for this task.</p>
         {attachedFiles.length === 0 ? (
           <div className="screen-empty"><strong>Nothing linked yet</strong><p>Attach a submitted file below, or upload one from the Files library.</p></div>
         ) : (
@@ -503,7 +503,7 @@ function TaskScreen() {
           </div>
         )}
         {attachableFiles.length > 0 && (
-          <div className="form-grid two" style={{ gridTemplateColumns: "1fr auto", alignItems: "end" }}>
+          <div className="form-grid inline-form-row two">
             <label>
               Attach a submitted file
               <select value={attachFileId} onChange={(event) => setAttachFileId(event.target.value)}>
@@ -530,7 +530,7 @@ function TaskScreen() {
 
       <section className="panel">
         <h2>Activity</h2>
-        <p className="panel-sub">RECORDED AS AN AUDIT TRAIL</p>
+        <p className="panel-sub">Recent changes to this task.</p>
         {events.length === 0 ? (
           <div className="screen-empty"><strong>No activity yet</strong><p>Status changes and edits are logged here automatically.</p></div>
         ) : (

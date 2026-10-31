@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Collabry | Project collaboration, with context",
-  description: "A premium workspace for final-year project teams.",
+  title: "Collabry | Project workspace for university teams",
+  description: "A secure workspace for final-year project teams: tasks, meetings, files and messages in one place.",
   icons: {
     icon: "/collabry-mark.svg",
     apple: "/collabry-mark.svg",

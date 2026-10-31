@@ -204,7 +204,7 @@ export default function FilesPage() {
           <div>
             <p className="overline">{team?.name ?? "PROJECT WORKSPACE"}</p>
             <h1>Shared files</h1>
-            <p>Private project materials with controlled, expiring downloads.</p>
+            <p>Project files with secure, time-limited download links.</p>
           </div>
           <label className="file-picker">
             Choose file
@@ -242,7 +242,7 @@ export default function FilesPage() {
             value={selectedTaskId}
             onChange={(event) => setSelectedTaskId(event.target.value)}
             aria-label="Link to task"
-            style={{ maxWidth: 200 }}
+            className="task-link-select"
           >
             <option value="">No task linked</option>
             {tasks.map((task) => (
@@ -296,7 +296,7 @@ export default function FilesPage() {
             <div className="file-empty">
               <span>↗</span>
               <strong>No shared files yet</strong>
-              <p>Upload your first project material to keep the team working from one source of truth.</p>
+              <p>Upload your first file so everyone on the team works from the same documents.</p>
             </div>
           ) : (
             files.map((file) => {
@@ -311,7 +311,7 @@ export default function FilesPage() {
                       {" · "}<span className={`badge ${file.submission_status === "approved" ? "" : file.submission_status === "submitted" ? "violet" : file.submission_status === "changes_requested" ? "warn" : "muted"}`}>
                         {STATUS_LABEL[file.submission_status]}
                       </span>
-                      {linkedTask && <span className="badge violet" style={{ marginLeft: 6 }}>📌 {linkedTask.title}</span>}
+                      {linkedTask && <span className="badge violet" style={{ marginLeft: 6 }}>Linked: {linkedTask.title}</span>}
                     </small>
                     {file.review_note && <small style={{ color: "#ffb49f" }}>Reviewer: {file.review_note}</small>}
                   </div>

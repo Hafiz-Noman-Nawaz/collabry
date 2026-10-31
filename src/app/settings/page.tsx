@@ -117,7 +117,7 @@ export default function SettingsPage() {
 
       <section className="panel">
         <h2>Profile</h2>
-        <p className="panel-sub">SHOWN TO TEAMMATES IN MEMBERSHIP LISTS</p>
+        <p className="panel-sub">Visible to teammates in member lists.</p>
         {!profile ? (
           <p className="panel-sub">Loading profile...</p>
         ) : (
@@ -138,7 +138,7 @@ export default function SettingsPage() {
 
       <section className="panel">
         <h2>Notification preferences</h2>
-        <p className="panel-sub">APPLIED WHENEVER THE SERVER SENDS A NOTIFICATION</p>
+        <p className="panel-sub">Choose which updates reach your inbox.</p>
         {!prefs ? (
           <p className="panel-sub">Loading preferences...</p>
         ) : (
@@ -164,9 +164,11 @@ export default function SettingsPage() {
 
       <section className="panel">
         <h2>Browser notifications</h2>
-        <p className="panel-sub">CURRENT PERMISSION: {permission.toUpperCase()}</p>
+        <p className="panel-sub">
+          {permission === "granted" ? "Enabled on this device." : permission === "denied" ? "Blocked by this browser." : "Not enabled on this device."}
+        </p>
         <p style={{ color: "#8b8bab", fontSize: 10, lineHeight: 1.6, marginTop: 0 }}>
-          Allow notifications to see workspace updates arrive as this app&apos;s service worker is active. You can revoke this at any time from your browser site settings.
+          Turn this on to receive workspace updates in this browser. You can change it again in your browser&apos;s site settings.
         </p>
         <div className="form-actions">
           <button className="primary" disabled={permission === "granted" || permission === "unsupported"} onClick={enableNotifications}>

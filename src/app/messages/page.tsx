@@ -335,7 +335,7 @@ export default function MessagesPage() {
             </form>
           )}
           {conversations.length === 0 ? (
-            <div className="chat-empty-state"><span>□</span><strong>No conversations yet</strong><p>Create a private team channel to begin.</p></div>
+            <div className="chat-empty-state"><span>□</span><strong>No conversations yet</strong><p>Create a conversation to get started.</p></div>
           ) : (
             conversations.map((conversation) => (
               <button
@@ -480,7 +480,7 @@ export default function MessagesPage() {
                                 onClick={() => openAttachment(file.id)}
                                 style={{ border: 0, background: "transparent", color: "#7ce5ea", fontSize: 9, cursor: "pointer", textAlign: "left", padding: 0 }}
                               >
-                                📎 {file.file_name} · {formatBytes(file.file_size)}
+                                {file.file_name} · {formatBytes(file.file_size)}
                               </button>
                             ))}
                           </div>
@@ -505,8 +505,10 @@ export default function MessagesPage() {
               </div>
 
               <form className="message-composer" onSubmit={send}>
-                <label style={{ cursor: "pointer", alignSelf: "center" }} title="Attach a file">
-                  📎
+                <label className="chat-attach" title="Attach a file" aria-label="Attach a file">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M21.44 11.05 12.25 20.24a5.5 5.5 0 0 1-7.78-7.78l8.49-8.49a3.5 3.5 0 0 1 4.95 4.95l-8.49 8.49a1.5 1.5 0 0 1-2.12-2.12l7.78-7.78" />
+                  </svg>
                   <input type="file" accept="application/pdf,text/plain,image/*,.zip,.docx" onChange={chooseAttachment} hidden />
                 </label>
                 <input value={body} onChange={(event) => { setBody(event.target.value); announceTyping(); }} placeholder="Write a message..." aria-label="Message" />
@@ -523,7 +525,7 @@ export default function MessagesPage() {
             <div className="chat-empty chat-empty-large">
               <span className="chat-hero-mark">C</span>
               <strong>Select a conversation</strong>
-              <p>Choose a channel or create a new one for your team.</p>
+              <p>Choose a conversation or start a new one.</p>
             </div>
           )}
           {message && <p className="chat-error" role="status">{message}</p>}

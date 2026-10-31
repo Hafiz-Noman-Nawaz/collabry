@@ -120,7 +120,7 @@ export default function TeamPage() {
               <div>
                 <p className="overline">INVITATIONS</p>
                 <h1 style={{ fontSize: 22 }}>Pending invitations</h1>
-                <p>Links expire 72 hours after they are created.</p>
+                <p>Invitations expire 72 hours after they are sent.</p>
               </div>
             </div>
             {invitations.map((invitation) => (

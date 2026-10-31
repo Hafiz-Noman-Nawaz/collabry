@@ -88,12 +88,13 @@ button.kanban-item:hover { border-color: #9c69f55c; background: #9c69f514; }
 .auth-page { display: grid; min-height: 100vh; grid-template-columns: minmax(0, 1fr) minmax(390px, .82fr); background: radial-gradient(circle at 18% 15%, #282056 0, transparent 38%), #08091b; }
 .auth-panel { width: min(430px, calc(100% - 64px)); align-self: center; justify-self: center; }
 .auth-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 82px; color: #fff; font-size: 19px; font-weight: 700; letter-spacing: -.3px; }.auth-brand img { filter: drop-shadow(0 0 12px #9c69f56b); }.auth-panel .eyebrow { margin-bottom: 10px; color: #9c8ef0; font-size: 9px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }.auth-panel h1 { margin: 0; color: #fff; font-size: 38px; letter-spacing: -1.5px; line-height: 1.05; }.auth-copy { max-width: 350px; margin: 12px 0 28px; color: #8d8eae; font-size: 12px; line-height: 1.65; }.auth-form { display: grid; gap: 16px; }.auth-form label { display: grid; gap: 7px; color: #b6b4d0; font-size: 10px; font-weight: 600; }.auth-form input { width: 100%; padding: 13px 14px; border: 1px solid #ffffff18; border-radius: 6px; outline: 0; color: #fff; background: #ffffff08; font-size: 12px; }.auth-form input::placeholder { color: #676788; }.auth-form input:focus { border-color: #9c69f5; box-shadow: 0 0 0 3px #9c69f51f; }.auth-submit { margin-top: 3px; padding: 13px; border: 0; border-radius: 6px; color: #fff; background: linear-gradient(110deg, #a874fc, #7953db); box-shadow: 0 10px 24px #8e61eb40; font-size: 11px; font-weight: 700; cursor: pointer; }.auth-submit:disabled { cursor: wait; opacity: .6; }.auth-message { padding: 10px 12px; border: 1px solid #ffffff16; border-radius: 6px; color: #7ce5ea; background: #2bd5e814; font-size: 10px; line-height: 1.5; }.auth-switch { margin-top: 18px; padding: 0; border: 0; color: #aa7bff; background: transparent; font-size: 10px; cursor: pointer; }.auth-aside { position: relative; display: flex; flex-direction: column; justify-content: flex-end; min-height: 100vh; padding: 74px; overflow: hidden; color: #d7dced; background: linear-gradient(145deg, #171535, #0d0d24); }.auth-aside::before { position: absolute; top: 11%; right: 12%; width: 290px; height: 290px; border: 1px solid #9c69f52b; border-radius: 50%; box-shadow: 0 0 0 36px #9c69f508, 0 0 0 72px #9c69f504; content: ""; }.auth-aside::after { position: absolute; right: 18%; bottom: 18%; width: 180px; height: 180px; border: 1px solid #31d9ed22; border-radius: 50%; content: ""; }.aside-kicker { position: relative; z-index: 1; color: #52dbe7; font-size: 9px; font-weight: 700; letter-spacing: .16em; }.auth-aside h2 { position: relative; z-index: 1; max-width: 420px; margin: auto 0 18px; color: #fff; font-size: clamp(32px, 4vw, 56px); font-weight: 500; letter-spacing: -2px; line-height: 1.02; }.auth-aside p { position: relative; z-index: 1; max-width: 370px; margin: 0 0 48px; color: #9d9dbb; font-size: 13px; line-height: 1.7; }.aside-rule { position: relative; z-index: 1; width: 45px; height: 2px; margin-bottom: 13px; background: #9c69f5; box-shadow: 0 0 12px #9c69f5; }.auth-aside small { position: relative; z-index: 1; color: #777798; font-size: 10px; }
-.modal-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: #050615b8; backdrop-filter: blur(8px); }
-.project-modal { position: relative; width: min(440px, 100%); padding: 28px; border: 1px solid #ffffff20; border-radius: 14px; background: linear-gradient(145deg, #292353, #15152f); box-shadow: 0 24px 80px #00000080; }
-.project-modal h2 { margin: 0; color: #fff; font-size: 24px; letter-spacing: -.5px; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; background: #050615c4; backdrop-filter: blur(8px); overflow-y: auto; overscroll-behavior: contain; }
+.project-modal { position: relative; width: min(460px, 100%); max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 28px; border: 1px solid #ffffff20; border-radius: 14px; background: linear-gradient(145deg, #292353, #15152f); box-shadow: 0 24px 80px #00000080; }
+.project-modal-compact { width: min(420px, 100%); }
+.project-modal h2 { margin: 0; padding-right: 26px; color: #fff; font-size: 24px; letter-spacing: -.5px; line-height: 1.2; }
 .modal-copy { margin: 8px 0 24px; color: #aaa7c5; font-size: 11px; line-height: 1.6; }
 .project-modal label { display: grid; gap: 7px; margin-top: 15px; color: #c4c0dc; font-size: 10px; }
-.project-modal input, .project-modal textarea { width: 100%; padding: 11px 12px; border: 1px solid #ffffff18; border-radius: 6px; outline: 0; color: #fff; background: #0c0d23aa; font-size: 12px; resize: vertical; }
+.project-modal input, .project-modal textarea { width: 100%; max-height: 180px; padding: 11px 12px; border: 1px solid #ffffff18; border-radius: 6px; outline: 0; color: #fff; background: #0c0d23aa; font-size: 12px; resize: vertical; }
 .project-modal input:focus, .project-modal textarea:focus { border-color: #9c69f5; box-shadow: 0 0 0 3px #9c69f51f; }
 .modal-close { position: absolute; top: 16px; right: 18px; border: 0; color: #aaa7c5; background: transparent; font-size: 22px; cursor: pointer; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
@@ -103,6 +104,18 @@ button.kanban-item:hover { border-color: #9c69f55c; background: #9c69f514; }
 .project-modal select { width: 100%; padding: 11px 12px; border: 1px solid #ffffff18; border-radius: 6px; outline: 0; color: #fff; background: #0c0d23; font-size: 12px; }
 .project-modal .new-project:disabled { cursor: not-allowed; opacity: .45; }
 .modal-message { margin: 15px 0 0; padding: 9px 10px; border-radius: 5px; color: #78e5eb; background: #2bd5e814; font-size: 10px; line-height: 1.5; }
+.danger-zone { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; padding-top: 18px; border-top: 1px solid #ff795f26; }
+.danger-zone strong { display: block; color: #ffb3a6; font-size: 11px; }
+.danger-zone p { max-width: 280px; margin: 5px 0 0; color: #928896; font-size: 10px; line-height: 1.5; }
+.danger-button { flex: 0 0 auto; padding: 10px 14px; border: 1px solid #ff795f59; border-radius: 6px; color: #ffb3a6; background: #ff795f12; font-size: 11px; font-weight: 600; cursor: pointer; transition: .2s ease; }
+.danger-button:hover { background: #ff795f22; }
+.danger-button.solid { border-color: #d9533f; color: #fff; background: #d9533f; }
+.danger-button.solid:hover { background: #c24633; }
+.danger-button:disabled { cursor: not-allowed; opacity: .5; }
+.project-modal { scrollbar-width: thin; scrollbar-color: #6d55c2 #ffffff08; }
+.project-modal::-webkit-scrollbar { width: 8px; }
+.project-modal::-webkit-scrollbar-track { background: transparent; }
+.project-modal::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: #6d55c2; background-clip: content-box; }
 
 @media (max-width: 1000px) {
   .collabry-sidebar { width: 190px; flex-basis: 190px; }
@@ -124,4 +137,15 @@ button.kanban-item:hover { border-color: #9c69f55c; background: #9c69f514; }
   .mastery-card { min-height: 270px; }
   .head-people { align-self: flex-end; }
   .auth-page { display: block; min-height: 100vh; }.auth-panel { width: min(430px, calc(100% - 38px)); padding: 28px 0 50px; }.auth-brand { margin-bottom: 64px; }.auth-aside { display: none; }
+  .modal-backdrop { align-items: flex-end; padding: 0; }
+  .project-modal { width: 100%; max-height: calc(100dvh - 10px); padding: 22px 18px calc(20px + env(safe-area-inset-bottom)); border-right: 0; border-bottom: 0; border-left: 0; border-radius: 18px 18px 0 0; }
+  .project-modal h2 { font-size: 20px; }
+  .modal-close { top: 8px; right: 10px; display: grid; width: 36px; height: 36px; place-items: center; border-radius: 50%; }
+  .modal-actions { flex-wrap: wrap; }
+  .modal-actions .new-project, .modal-actions .cancel-button, .modal-actions .danger-button { flex: 1 1 140px; }
+  .danger-zone { align-items: stretch; flex-direction: column; gap: 12px; }
+  .danger-zone p { max-width: none; }
+  .danger-button { width: 100%; }
+  .invite-panel { padding: 34px 22px; }
+  .notification-panel { right: 0; top: 52px; width: min(340px, calc(100vw - 24px)); max-height: calc(100dvh - 80px); overflow-y: auto; }
 }

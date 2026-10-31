@@ -293,7 +293,7 @@ function MeetingScreen() {
 
       <section className="panel">
         <h2>Your RSVP</h2>
-        <p className="panel-sub">{canManage ? "YOU CAN ALSO RESCHEDULE BELOW" : "ONLY MANAGERS CAN CHANGE THE SCHEDULE"}</p>
+        <p className="panel-sub">{canManage ? "You can also reschedule below." : "Only managers can change the schedule."}</p>
         <div className="row-actions">
           <button onClick={() => rsvp("accepted")} disabled={busy || myAttendee?.rsvp === "accepted"}>Accept</button>
           <button className="muted" onClick={() => rsvp("tentative")} disabled={busy || myAttendee?.rsvp === "tentative"}>Maybe</button>
@@ -306,7 +306,7 @@ function MeetingScreen() {
 
       <section className="panel">
         <h2>Details</h2>
-        <p className="panel-sub">{canManage ? "SAVE TO RESCHEDULE AND NOTIFY ATTENDEES" : "READ ONLY"}</p>
+        <p className="panel-sub">{canManage ? "Saving notifies everyone invited." : "Only managers can edit these details."}</p>
         {canManage ? (
           <form className="form-grid" onSubmit={saveDetails}>
             <label>
@@ -391,14 +391,14 @@ function MeetingScreen() {
         <h2>Action items</h2>
         <p className="panel-sub">
           {meeting.meeting_action_items.length === 0
-            ? "NOT RECORDED YET"
+            ? "No action items yet."
             : openItems === 0
-              ? `ALL ${meeting.meeting_action_items.length} CLOSED`
-              : `${openItems} STILL OPEN`}
+              ? `All ${meeting.meeting_action_items.length} closed.`
+              : `${openItems} still open.`}
         </p>
         {canManage && (
           <form className="form-grid" onSubmit={addItem} style={{ marginBottom: 14 }}>
-            <div className="form-grid two" style={{ gridTemplateColumns: "2fr 1fr 1fr auto", alignItems: "end" }}>
+            <div className="form-grid inline-form-row">
               <label>
                 New action item
                 <input value={itemTitle} onChange={(event) => setItemTitle(event.target.value)} maxLength={200} placeholder="e.g. Share the survey instrument" />
@@ -424,7 +424,7 @@ function MeetingScreen() {
           </form>
         )}
         {meeting.meeting_action_items.length === 0 ? (
-          <div className="screen-empty"><strong>No action items yet</strong><p>{canManage ? "Capture who owes what after the discussion." : "Managers record these during or after the meeting."}</p></div>
+          <div className="screen-empty"><strong>No action items yet</strong><p>{canManage ? "Record what each person agreed to do." : "Managers record these during or after the meeting."}</p></div>
         ) : (
           <div className="data-list">
             {meeting.meeting_action_items.map((item) => (
@@ -487,7 +487,7 @@ function MeetingScreen() {
       {canManage && meeting.meeting_attendees.length > 0 && (
         <section className="panel">
           <h2>Attendance</h2>
-          <p className="panel-sub">RECORDED AFTER THE MEETING</p>
+          <p className="panel-sub">Notes shared after the meeting.</p>
           <div className="data-list">
             {meeting.meeting_attendees.map((attendee) => (
               <article className="data-row" key={attendee.user_id}>

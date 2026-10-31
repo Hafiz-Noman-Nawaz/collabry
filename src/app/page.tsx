@@ -321,7 +321,7 @@ export default function Home() {
           <div>
             <p className="overline">WORKSPACE OVERVIEW</p>
             <h1>Welcome to Collabry</h1>
-            <p className="subtitle">Secure collaboration engine for final-year projects and research teams.</p>
+            <p className="subtitle">A secure workspace for final-year projects and research teams.</p>
           </div>
         </div>
       )}
@@ -401,7 +401,7 @@ export default function Home() {
             <div className="card-heading">
               <div>
                 <h2>Project progress</h2>
-                <p>COMPLETION STATUS</p>
+                <p>TASKS COMPLETED</p>
               </div>
               <span className="spark">{completionRate}%</span>
             </div>
@@ -413,9 +413,9 @@ export default function Home() {
               </div>
             </div>
             <p className="mastery-copy">
-              {completedTasks} of {totalTasks} milestones achieved
+              {completedTasks} of {totalTasks} tasks completed
               <br />
-              {stats?.tasks?.overdue ? `${stats.tasks.overdue} task(s) overdue` : "All milestones on schedule"}
+              {stats?.tasks?.overdue ? `${stats.tasks.overdue} task(s) overdue` : "No overdue tasks"}
             </p>
           </section>
 
@@ -424,31 +424,35 @@ export default function Home() {
             <div>
               <div className="card-heading">
                 <div>
-                  <h2>Workspace hubs</h2>
-                  <p>INTEGRATED COLLABORATION</p>
+                  <h2>Quick links</h2>
+                  <p>MESSAGES AND FILES</p>
                 </div>
               </div>
               <p style={{ color: "#8d8eae", fontSize: 12, marginTop: 10, lineHeight: 1.5 }}>
-                Jump directly into real-time team chat or the protected file library for <strong>{activeTeam.name}</strong>.
+                Open your team conversation or the shared file library for <strong>{activeTeam.name}</strong>.
               </p>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 16 }}>
+            <div className="launcher-grid">
               <button
                 className="launcher-card-btn"
                 onClick={() => router.push("/messages")}
               >
-                <span style={{ fontSize: 20 }}>💬</span>
+                <svg className="launcher-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M21 12a8 8 0 0 1-8 8H4l2-3a8 8 0 1 1 15-5Z" />
+                </svg>
                 <strong>Messages</strong>
-                <small>Real-time team chat ↗</small>
+                <small>Team conversations</small>
               </button>
               <button
                 className="launcher-card-btn"
                 onClick={() => router.push("/files")}
               >
-                <span style={{ fontSize: 20 }}>📁</span>
-                <strong>Files Library</strong>
-                <small>Private file storage ↗</small>
+                <svg className="launcher-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M3 6h7l2 2h9v10H3z" />
+                </svg>
+                <strong>Project files</strong>
+                <small>Shared documents</small>
               </button>
             </div>
           </section>
@@ -459,8 +463,8 @@ export default function Home() {
       <section className="live-tasks" style={{ marginTop: 24 }}>
         <div className="section-heading">
           <div>
-            <h2>Task queue</h2>
-            <p>Active tasks for {activeTeam?.name ?? "your project"}.</p>
+            <h2>Tasks</h2>
+            <p>Open work in {activeTeam?.name ?? "your project"}.</p>
           </div>
           <button
             className="text-action"
@@ -540,8 +544,8 @@ export default function Home() {
       <section className="kanban-card" style={{ marginTop: 24 }}>
         <div className="section-heading">
           <div>
-            <h2>Kanban work stream</h2>
-            <p>Live task distribution across workflow states.</p>
+            <h2>Task board</h2>
+            <p>Every task in the active project, grouped by status.</p>
           </div>
           <button
             className="text-action"
@@ -555,7 +559,7 @@ export default function Home() {
 
         {liveTasks.length === 0 ? (
           <div className="task-empty" style={{ margin: "16px 0 0" }}>
-            Add tasks above to visualize work in the Kanban stream.
+            Add a task to see it on the board.
           </div>
         ) : (
           <div className="kanban-row">
@@ -577,7 +581,7 @@ export default function Home() {
         <div className="modal-backdrop" role="presentation" onClick={() => setShowProjectForm(false)}>
           <section className="project-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close" aria-label="Close" onClick={() => setShowProjectForm(false)}>✕</button>
-            <p className="overline">NEW WORKSPACE</p>
+            <p className="overline">NEW PROJECT</p>
             <h2>Create a project</h2>
             <p className="modal-copy">Start a private project space, then invite your supervisor and teammates.</p>
             <label>
@@ -620,7 +624,7 @@ export default function Home() {
             <button className="modal-close" aria-label="Close" onClick={() => setInviteTeam(null)}>✕</button>
             <p className="overline">{inviteTeam.name.toUpperCase()}</p>
             <h2>Invite a collaborator</h2>
-            <p className="modal-copy">We&apos;ll email them a secure Collabry invitation right away. It expires after 72 hours and requires email verification to join.</p>
+            <p className="modal-copy">We&apos;ll email them a secure Collabry invitation right away. It expires after 72 hours and only works for that email address.</p>
             <label>
               Email address
               <input
@@ -670,7 +674,7 @@ export default function Home() {
             <button className="modal-close" aria-label="Close" onClick={() => setShowTaskForm(false)}>✕</button>
             <p className="overline">{activeTeam.name.toUpperCase()}</p>
             <h2>Add a task</h2>
-            <p className="modal-copy">Create a persisted milestone or action item.</p>
+            <p className="modal-copy">Add a task for this project.</p>
             <label>
               Task title
               <input
@@ -714,7 +718,7 @@ export default function Home() {
             <button className="modal-close" aria-label="Close" onClick={() => setShowMeetingForm(false)}>✕</button>
             <p className="overline">{activeTeam.name.toUpperCase()}</p>
             <h2>Schedule a meeting</h2>
-            <p className="modal-copy">Session timestamps are stored with your timezone.</p>
+            <p className="modal-copy">Times use your local time zone.</p>
             <label>
               Meeting title
               <input
