@@ -25,7 +25,8 @@ drop policy if exists roadmap_phases_read on public.roadmap_phases;
 create policy roadmap_phases_read on public.roadmap_phases for select to authenticated
   using (public.is_team_member(team_id));
 
-drop policy if exists roadmap_phases_manage on public.roadmap_phases for all to authenticated
+drop policy if exists roadmap_phases_manage on public.roadmap_phases;
+create policy roadmap_phases_manage on public.roadmap_phases for all to authenticated
   using (public.has_team_role(team_id, array['owner', 'supervisor', 'leader']::public.team_role[]) or created_by = auth.uid())
   with check (public.is_team_member(team_id));
 

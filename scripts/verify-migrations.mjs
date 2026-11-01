@@ -34,6 +34,7 @@ const expectedTables = [
   "announcements", "notifications", "notification_preferences", "scheduled_jobs", "audit_logs",
   "task_comments", "task_checklist_items", "task_events", "task_reviews",
   "message_reactions", "meeting_action_items",
+  "roadmap_phases",
 ];
 
 // Migration-5 columns the workspace screens select on; their absence used to
@@ -47,6 +48,7 @@ const expectedColumns = [
   ["project_files", "reviewed_at"],
   ["messages", "edited_at"],
   ["messages", "deleted_at"],
+  ["tasks", "phase_id"],
 ];
 
 // handle_new_user is a trigger function returning `trigger`, which PostgREST

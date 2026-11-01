@@ -9,6 +9,13 @@ import { MAX_PHASES, MAX_TASKS_PER_PHASE, MAX_TOTAL_TASKS, roadmapProgress, TASK
 
 const PHASE_SELECT = "id, team_id, title, summary, position, status, start_date, end_date, source, created_by, created_at, updated_at";
 
+function roadmapSchemaError(error: { message?: string } | null) {
+  if (error?.message && /roadmap_phases.*schema cache|relation .*roadmap_phases.*does not exist/i.test(error.message)) {
+    return "Roadmap storage is not enabled in this deployment. Apply migration 202611010009_roadmap_phases.sql (or the latest roadmap migration) in Supabase, then retry.";
+  }
+  return error?.message ?? "Unable to load the roadmap.";
+}
+
 const draftTaskSchema = z.object({
   title: z.string().trim().min(1).max(140),
   priority: z.enum(TASK_PRIORITIES).default("medium"),
@@ -43,7 +50,7 @@ export async function GET(request: Request) {
     supabase.from("roadmap_phases").select(PHASE_SELECT).eq("team_id", teamId).order("position", { ascending: true }),
     supabase.from("tasks").select("phase_id, status").eq("team_id", teamId).not("phase_id", "is", null),
   ]);
-  if (error) return badRequest(error.message);
+  if (error) return badRequest(roadmapSchemaError(error));
   if (taskError) return badRequest(taskError.message);
 
   // Progress is measured from the task rows that exist, never from a stored percentage.
@@ -96,7 +103,7 @@ export async function POST(request: Request) {
       .single();
     if (error || !data) {
       await recordAudit({ actorId: user.id, teamId: parsed.data.teamId, action: "roadmap.failed", resourceType: "team", resourceId: parsed.data.teamId, metadata: { error: error?.message ?? "no row" } });
-      return badRequest(error?.message ?? "Unable to save the roadmap.");
+      return badRequest(roadmapSchemaError(error));
     }
     position += 1;
     if (phase.tasks.length > 0) {

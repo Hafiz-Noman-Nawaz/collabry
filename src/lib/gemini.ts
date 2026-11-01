@@ -36,7 +36,6 @@ HARD RULES
 
 const RESPONSE_SCHEMA = {
   type: "object",
-  additionalProperties: false,
   required: ["phases", "questions"],
   properties: {
     phases: {
@@ -45,7 +44,6 @@ const RESPONSE_SCHEMA = {
       maxItems: MAX_PHASES,
       items: {
         type: "object",
-        additionalProperties: false,
         required: ["title", "tasks"],
         properties: {
           title: { type: "string" },
@@ -56,7 +54,6 @@ const RESPONSE_SCHEMA = {
             maxItems: MAX_TASKS_PER_PHASE,
             items: {
               type: "object",
-              additionalProperties: false,
               required: ["title"],
               properties: {
                 title: { type: "string" },

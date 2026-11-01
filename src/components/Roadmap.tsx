@@ -27,6 +27,23 @@ export type PhaseRecord = {
 
 type GeneratedPhase = { title: string; summary: string; tasks: Array<{ title: string }> };
 
+type RoadmapResponse = {
+  error?: string;
+  draft?: { phases?: GeneratedPhase[]; questions?: string[] };
+  phases?: PhaseRecord[];
+};
+
+async function responseData(response: Response): Promise<RoadmapResponse> {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed && typeof parsed === "object" ? (parsed as RoadmapResponse) : {};
+  } catch {
+    return {};
+  }
+}
+
 const PHASE_LABELS: Record<PhaseRecord["status"], string> = {
   planned: "Planned",
   active: "In progress",
@@ -98,25 +115,32 @@ export function RoadmapPlanner({
     setGenerating(true);
     setStatus("Planning from your description…");
     setQuestions([]);
-    const response = await fetch("/api/roadmap/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        projectName: brief.projectName.trim(),
-        description: brief.description.trim(),
-        technologies: technologies.trim(),
-        notes: notes.trim(),
-      }),
-    });
-    const result = await response.json().catch(() => ({}));
+    let response: Response;
+    try {
+      response = await fetch("/api/roadmap/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectName: brief.projectName.trim(),
+          description: brief.description.trim(),
+          technologies: technologies.trim(),
+          notes: notes.trim(),
+        }),
+      });
+    } catch {
+      setGenerating(false);
+      setStatus("The AI service could not be reached. Check the deployed site URL and try again.");
+      return;
+    }
+    const result = await responseData(response);
     setGenerating(false);
     if (!response.ok) {
       setStatus(result.error ?? "The plan could not be produced.");
       return;
     }
-    const generated = (result.draft?.phases ?? []) as GeneratedPhase[];
+    const generated = result.draft?.phases ?? [];
     setPhases(generated.map((phase) => emptyPhase(phase.title, phase.summary, phase.tasks.map((task) => task.title).join("\n"), "gemini")));
-    setQuestions((result.draft?.questions ?? []) as string[]);
+    setQuestions(result.draft?.questions ?? []);
     setStatus(`${generated.length} phases suggested. Edit anything that does not fit before creating the project.`);
   }
 
@@ -202,8 +226,13 @@ export function RoadmapPlanner({
 }
 
 async function fetchRoadmap(teamId: string): Promise<{ phases: PhaseRecord[]; error: string }> {
-  const response = await fetch(`/api/roadmap?teamId=${teamId}`);
-  const result = await response.json().catch(() => ({}));
+  let response: Response;
+  try {
+    response = await fetch(`/api/roadmap?teamId=${teamId}`);
+  } catch {
+    return { phases: [], error: "The roadmap service could not be reached. Check the deployed site URL and try again." };
+  }
+  const result = await responseData(response);
   if (!response.ok) return { phases: [], error: result.error ?? "Unable to load the roadmap." };
   return { phases: (result.phases ?? []) as PhaseRecord[], error: "" };
 }
@@ -259,8 +288,14 @@ export function RoadmapPanel({ teamId, onChanged }: { teamId: string; onChanged?
         },
       ],
     };
-    const response = await fetch("/api/roadmap", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    const result = await response.json().catch(() => ({}));
+    let response: Response;
+    try {
+      response = await fetch("/api/roadmap", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    } catch {
+      fail("The roadmap service could not be reached. Check the deployed site URL and try again.");
+      return;
+    }
+    const result = await responseData(response);
     if (!response.ok) {
       fail(result.error ?? "Unable to add the phase.");
       return;
@@ -273,13 +308,20 @@ export function RoadmapPanel({ teamId, onChanged }: { teamId: string; onChanged?
 
   async function changeStatus(phase: PhaseRecord, next: PhaseRecord["status"]) {
     setPhases((current) => (current ?? []).map((entry) => (entry.id === phase.id ? { ...entry, status: next } : entry)));
-    const response = await fetch(`/api/roadmap/${phase.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: next }),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`/api/roadmap/${phase.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+    } catch {
+      fail("The roadmap service could not be reached. Check the deployed site URL and try again.");
+      await reload();
+      return;
+    }
     if (!response.ok) {
-      const result = await response.json().catch(() => ({}));
+      const result = await responseData(response);
       fail(result.error ?? "Unable to update that phase.");
       await reload();
       return;
@@ -290,8 +332,14 @@ export function RoadmapPanel({ teamId, onChanged }: { teamId: string; onChanged?
 
   async function removePhase(phase: PhaseRecord) {
     if (!window.confirm(`Remove the phase "${phase.title}"? Its ${phase.task_total} task(s) stay in the project, unassigned.`)) return;
-    const response = await fetch(`/api/roadmap/${phase.id}`, { method: "DELETE" });
-    const result = await response.json().catch(() => ({}));
+    let response: Response;
+    try {
+      response = await fetch(`/api/roadmap/${phase.id}`, { method: "DELETE" });
+    } catch {
+      fail("The roadmap service could not be reached. Check the deployed site URL and try again.");
+      return;
+    }
+    const result = await responseData(response);
     if (!response.ok) {
       fail(result.error ?? "Unable to remove that phase.");
       return;

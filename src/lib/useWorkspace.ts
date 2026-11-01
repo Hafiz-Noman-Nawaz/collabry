@@ -46,7 +46,7 @@ export function useWorkspace() {
         const result = await response.json().catch(() => ({}));
         if (!cancelled) setError(result.error ?? "Unable to load projects.");
       } else {
-        const result = await response.json();
+        const result = await response.json().catch(() => ({}));
         if (!cancelled) {
           const rows: WorkspaceTeam[] = result.teams ?? [];
           setTeams(rows);
@@ -64,7 +64,7 @@ export function useWorkspace() {
   const refresh = useCallback(async () => {
     const response = await fetch("/api/teams?limit=50");
     if (response.ok) {
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
       const rows: WorkspaceTeam[] = result.teams ?? [];
       setTeams(rows);
       setTeamId((current) => (rows.some((row) => row.id === current) ? current : rows[0]?.id ?? ""));
