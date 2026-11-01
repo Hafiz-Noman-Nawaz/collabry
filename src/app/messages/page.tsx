@@ -564,18 +564,6 @@ export default function MessagesPage() {
     setEditingId(null);
   }
 
-  async function removeMessage(messageId: string) {
-    if (!window.confirm("Delete this message for everyone?")) return;
-    const response = await fetch(`/api/messages/${messageId}`, { method: "DELETE" });
-    if (!response.ok) {
-      const result = await response.json().catch(() => ({}));
-      announce(result.error ?? "Unable to delete the message.");
-      return;
-    }
-    setMessages((current) => current.filter((item) => item.id !== messageId));
-    setTotal((current) => Math.max(0, current - 1));
-  }
-
   async function toggleReaction(messageId: string, emoji: string) {
     const existing = messages.find((item) => item.id === messageId)?.message_reactions ?? [];
     const mine = existing.some((reaction) => reaction.emoji === emoji && reaction.user_id === userId);
@@ -927,12 +915,6 @@ export default function MessagesPage() {
                     const mine = item.sender_id === userId;
                     const previous = index === 0 ? undefined : messages[index - 1];
                     const showDay = !previous || new Date(previous.created_at).toDateString() !== new Date(item.created_at).toDateString();
-                    const grouped = new Map<string, string[]>();
-                    for (const reaction of item.message_reactions ?? []) {
-                      const bucket = grouped.get(reaction.emoji) ?? [];
-                      bucket.push(reaction.user_id);
-                      grouped.set(reaction.emoji, bucket);
-                    }
                     const images = (item.message_attachments ?? []).filter((file) => isImageType(file.content_type) && !brokenImages[file.id]);
                     const docs = (item.message_attachments ?? []).filter((file) => !images.includes(file));
                     return (
@@ -1018,28 +1000,6 @@ export default function MessagesPage() {
                             {item.failed && (
                               <button className="message-retry" onClick={() => retry(item.id)}>
                                 Retry
-                              </button>
-                            )}
-                            {Array.from(grouped.entries()).map(([emoji, users]) => (
-                              <button
-                                key={emoji}
-                                className={`reaction-chip ${users.includes(userId) ? "mine" : ""}`}
-                                onClick={() => toggleReaction(item.id, emoji)}
-                                aria-label={`React ${emoji}`}
-                              >
-                                {emoji} {users.length}
-                              </button>
-                            ))}
-                            {!item.pending && !item.failed && (
-                              <button
-                                className="message-more"
-                                aria-label="Message actions"
-                                onClick={(event) => {
-                                  const rect = event.currentTarget.getBoundingClientRect();
-                                  openMenuAt(rect.left - 10, rect.bottom + 6, item);
-                                }}
-                              >
-                                ⋯
                               </button>
                             )}
                           </div>
@@ -1159,16 +1119,6 @@ export default function MessagesPage() {
                   }}
                 >
                   Edit message
-                </button>
-                <button
-                  role="menuitem"
-                  className="danger"
-                  onClick={() => {
-                    setMenu(null);
-                    removeMessage(menuMessage.id);
-                  }}
-                >
-                  Delete message
                 </button>
               </>
             )}
