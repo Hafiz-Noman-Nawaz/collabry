@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/browser";
 
 const workspaceNav: Array<{ label: string; href: string; icon: string }> = [
@@ -21,6 +21,7 @@ type NotificationItem = {
   title: string;
   body: string;
   read_at: string | null;
+  created_at: string;
   resource_type: string | null;
   resource_id: string | null;
 };
@@ -57,6 +58,19 @@ function notificationHref(item: NotificationItem) {
   return "/";
 }
 
+/** Module scope: the clock read must stay out of the render path. */
+function timeAgo(value: string) {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
 export function WorkspaceShell({
   active,
   dense,
@@ -72,52 +86,78 @@ export function WorkspaceShell({
   const [messageUnread, setMessageUnread] = useState(0);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notifyOpen, setNotifyOpen] = useState(false);
+  const [notifyFilter, setNotifyFilter] = useState<"all" | "unread">("all");
   const [email, setEmail] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [teams, setTeams] = useState<SearchTeam[]>([]);
   const seenNotifications = useRef<Set<string>>(new Set());
+  const booted = useRef(false);
   const searchInput = useRef<HTMLInputElement>(null);
+
+  const loadNotifications = useCallback(async () => {
+    const response = await fetch("/api/notifications?limit=80");
+    if (!response.ok) return;
+    const result = await response.json();
+    const list: NotificationItem[] = result.notifications ?? [];
+    const unreadList = list.filter((item) => !item.read_at);
+    setNotifications(list);
+    setUnread(unreadList.length);
+    setMessageUnread(unreadList.filter((item) => item.kind === "message").length);
+    const canNotify = "Notification" in window && Notification.permission === "granted";
+    for (const item of list) {
+      if (item.read_at || seenNotifications.current.has(item.id)) continue;
+      seenNotifications.current.add(item.id);
+      // The first load only records what is already waiting; a desktop alert is
+      // reserved for things that arrive while the workspace is open.
+      if (booted.current && canNotify) {
+        new Notification("Collabry", {
+          body: item.body ? `${item.title} — ${item.body}` : item.title,
+          icon: "/collabry-mark.svg",
+        });
+      }
+    }
+    booted.current = true;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    let timer: number | undefined;
+    let debounce: number | undefined;
     const supabase = createClient();
-
-    async function checkNotifications() {
-      const response = await fetch("/api/notifications?limit=50");
-      if (!response.ok || cancelled) return;
-      const result = await response.json();
-      const list: NotificationItem[] = result.notifications ?? [];
-      if (cancelled) return;
-      const unreadList = list.filter((item) => !item.read_at);
-      setNotifications(list);
-      setUnread(unreadList.length);
-      setMessageUnread(unreadList.filter((item) => item.kind === "message").length);
-      const canNotify = typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted";
-      for (const item of list) {
-        if (item.read_at || seenNotifications.current.has(item.id)) continue;
-        seenNotifications.current.add(item.id);
-        if (canNotify) {
-          new Notification("Collabry", {
-            body: item.body ? `${item.title} — ${item.body}` : item.title,
-            icon: "/collabry-mark.svg",
-          });
-        }
-      }
-      timer = window.setTimeout(checkNotifications, 30000);
-    }
 
     supabase.auth.getUser().then(({ data }) => {
       if (!data.user) {
         router.replace("/login");
         return;
       }
-      if (!cancelled) setEmail(data.user.email ?? "");
-      checkNotifications();
+      if (cancelled) return;
+      setEmail(data.user.email ?? "");
+      loadNotifications();
     });
 
+    // Realtime is the fast path; the interval only covers a dropped socket.
+    const poll = window.setInterval(() => {
+      if (!document.hidden) loadNotifications();
+    }, 60000);
+    const channel = supabase
+      .channel("workspace-notifications")
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, () => {
+        window.clearTimeout(debounce);
+        debounce = window.setTimeout(loadNotifications, 200);
+      })
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+      window.clearTimeout(debounce);
+      supabase.removeChannel(channel);
+    };
+  }, [loadNotifications, router]);
+
+  useEffect(() => {
+    let cancelled = false;
     fetch("/api/teams?limit=50")
       .then((response) => (response.ok ? response.json() : null))
       .then((result) => {
@@ -126,12 +166,10 @@ export function WorkspaceShell({
         }
       })
       .catch(() => undefined);
-
     return () => {
       cancelled = true;
-      if (timer) window.clearTimeout(timer);
     };
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -176,17 +214,23 @@ export function WorkspaceShell({
     router.push("/login");
   }
 
+  /** Marks one notification read where it stands, without leaving the current screen. */
+  async function markOne(item: NotificationItem) {
+    if (item.read_at) return;
+    const stamp = new Date().toISOString();
+    setNotifications((current) => current.map((entry) => (entry.id === item.id ? { ...entry, read_at: stamp } : entry)));
+    setUnread((current) => Math.max(0, current - 1));
+    if (item.kind === "message") setMessageUnread((current) => Math.max(0, current - 1));
+    await fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: item.id }),
+    }).catch(() => undefined);
+  }
+
   async function openNotification(item: NotificationItem) {
     setNotifyOpen(false);
-    if (!item.read_at) {
-      await fetch("/api/notifications", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: item.id }),
-      });
-      setNotifications((current) => current.map((entry) => (entry.id === item.id ? { ...entry, read_at: new Date().toISOString() } : entry)));
-      setUnread((current) => Math.max(0, current - 1));
-    }
+    await markOne(item);
     router.push(notificationHref(item));
   }
 
@@ -202,6 +246,7 @@ export function WorkspaceShell({
   }
 
   const initials = (email || "U").slice(0, 2).toUpperCase();
+  const visibleNotifications = notifyFilter === "unread" ? notifications.filter((item) => !item.read_at) : notifications;
   const messagesActive = pathname.startsWith("/messages");
   const filesActive = pathname.startsWith("/files");
   const searchHits = useMemo(() => {
@@ -379,29 +424,51 @@ export function WorkspaceShell({
                   <div className="notification-heading">
                     <div>
                       <strong>Notifications</strong>
-                      <small>{unread} unread</small>
+                      <small>{unread} unread · {notifications.length} kept</small>
                     </div>
                     <button type="button" className="notify-mark" onClick={markAllRead} disabled={unread === 0}>
                       Mark all read
                     </button>
                   </div>
-                  {notifications.length === 0 ? (
-                    <p className="notification-empty">You are up to date.</p>
-                  ) : (
-                    notifications.slice(0, 12).map((item) => (
-                      <button
-                        key={item.id}
-                        className={`notification-item ${item.read_at ? "read" : ""}`}
-                        onClick={() => openNotification(item)}
-                      >
-                        <span className="notification-dot">{item.kind.slice(0, 1).toUpperCase()}</span>
-                        <span>
-                          <strong>{item.title}</strong>
-                          {item.body && <small>{item.body}</small>}
-                        </span>
-                      </button>
-                    ))
-                  )}
+                  <div className="notification-tabs" role="tablist" aria-label="Notification filter">
+                    <button type="button" role="tab" aria-selected={notifyFilter === "unread"} className={notifyFilter === "unread" ? "on" : ""} onClick={() => setNotifyFilter("unread")}>
+                      Unread{unread > 0 ? ` (${unread})` : ""}
+                    </button>
+                    <button type="button" role="tab" aria-selected={notifyFilter === "all"} className={notifyFilter === "all" ? "on" : ""} onClick={() => setNotifyFilter("all")}>
+                      All ({notifications.length})
+                    </button>
+                  </div>
+                  <div className="notification-scroll">
+                    {visibleNotifications.length === 0 ? (
+                      <p className="notification-empty">
+                        {notifyFilter === "unread" ? "Nothing unread right now." : "You have no notifications yet."}
+                      </p>
+                    ) : (
+                      visibleNotifications.map((item) => (
+                        <div key={item.id} className={`notification-row ${item.read_at ? "read" : ""}`}>
+                          <button className="notification-item" onClick={() => openNotification(item)}>
+                            <span className="notification-dot">{item.kind.slice(0, 1).toUpperCase()}</span>
+                            <span className="notification-text">
+                              <strong>{item.title}</strong>
+                              {item.body && <small>{item.body}</small>}
+                              <em>{timeAgo(item.created_at)}</em>
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className="notification-check"
+                            title={item.read_at ? "Already read" : "Mark as read"}
+                            aria-label={item.read_at ? "Already read" : `Mark "${item.title}" as read`}
+                            disabled={!!item.read_at}
+                            onClick={() => markOne(item)}
+                          >
+                            ✓
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  {notifications.length > 0 && <p className="notification-foot">Read items stay here — nothing is deleted.</p>}
                 </div>
               )}
             </div>

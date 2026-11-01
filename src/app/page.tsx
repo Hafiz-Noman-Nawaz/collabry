@@ -3,6 +3,8 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { WorkspaceShell } from "@/components/WorkspaceShell";
+import { DateTimeField, DurationChips } from "@/components/DateTimeField";
+import { addMinutesToField, durationMinutes, shiftEndForDuration, startOfNextSlot } from "@/lib/datetime-fields";
 import { invitationDeliveryMessage } from "@/lib/format";
 import { createClient } from "@/lib/supabase/browser";
 
@@ -508,6 +510,9 @@ export default function Home() {
             className="text-action"
             disabled={!teams.length}
             onClick={() => {
+              const startsAt = startOfNextSlot();
+              setMeetingStartsAt(startsAt);
+              setMeetingEndsAt(addMinutesToField(startsAt, 60));
               setShowMeetingForm(true);
               setMeetingMessage("");
             }}
@@ -727,26 +732,30 @@ export default function Home() {
             </label>
             <label>
               Starts
-              <input
-                type="datetime-local"
+              <DateTimeField
                 value={meetingStartsAt}
-                onChange={(e) => setMeetingStartsAt(e.target.value)}
+                onChange={(next) => {
+                  setMeetingStartsAt(next);
+                  setMeetingEndsAt((current) => shiftEndForDuration(next, current, meetingStartsAt));
+                }}
               />
             </label>
             <label>
               Ends
-              <input
-                type="datetime-local"
-                value={meetingEndsAt}
-                onChange={(e) => setMeetingEndsAt(e.target.value)}
-              />
+              <DateTimeField value={meetingEndsAt} onChange={setMeetingEndsAt} />
+              <DurationChips start={meetingStartsAt} end={meetingEndsAt} onEnd={setMeetingEndsAt} />
             </label>
+            {meetingEndsAt && meetingStartsAt && !durationMinutes(meetingStartsAt, meetingEndsAt) ? (
+              <p className="modal-message" role="status">
+                The meeting must end after it starts.
+              </p>
+            ) : null}
             {meetingMessage && <p className="modal-message" role="status">{meetingMessage}</p>}
             <div className="modal-actions">
               <button className="cancel-button" onClick={() => setShowMeetingForm(false)}>Cancel</button>
               <button
                 className="new-project"
-                disabled={savingMeeting || !meetingTitle.trim() || !meetingStartsAt || !meetingEndsAt}
+                disabled={savingMeeting || !meetingTitle.trim() || !durationMinutes(meetingStartsAt, meetingEndsAt)}
                 onClick={createMeeting}
               >
                 {savingMeeting ? "Scheduling..." : "Schedule meeting"}

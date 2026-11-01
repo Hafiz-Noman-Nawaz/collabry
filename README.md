@@ -64,7 +64,7 @@ Supabase Auth: Site URL `https://collabryy.tech`, redirect URL `https://collabry
 | Attendee added | The new attendee | `You've been added to <title> — <weekday, date>` |
 | Reminder, 24 hours before | Team members | `Reminder: <title> starts tomorrow at <time>` |
 
-Meeting times use the time zone stored on the meeting, so a session scheduled in `Asia/Karachi` prints Karachi time for everyone. Each send honours the recipient's stored `email_invitations` / `email_meetings` preference. Delivery never blocks the action that triggered it: an invitation is still created and the UI shows the shareable link plus the provider's own reason ("the sender address is not on a domain verified with Resend"), and a meeting is still saved even when the provider is unreachable. Reminder emails need `NEXT_PUBLIC_APP_URL`; without a canonical host there is nothing to link to, so the job records the in-app notification and logs the skip.
+Meeting times use the time zone stored on the meeting, so a session scheduled in `Asia/Karachi` prints Karachi time for everyone. Each send honours the recipient's stored `email_invitations` / `email_meetings` preference. Delivery never blocks the action that triggered it: an invitation is still created and the owner is shown the shareable link plus which of the three causes applied — `not-configured` (this deployment has no sender), `opted-out` (the recipient turned invitation email off in their own settings) or `provider` (Resend refused it, e.g. an unverified sender). Blaming the recipient for a server gap is the one answer the UI must never give. A meeting is still saved even when the provider is unreachable. Reminder emails need `NEXT_PUBLIC_APP_URL`; without a canonical host there is nothing to link to, so the job records the in-app notification and logs the skip.
 
 `npm run test:integration` boots the server with a deliberately invalid Resend key so the suite can never send live mail to its throwaway `@example.com` accounts; it asserts the rejected-key reason reaches the API response. The unit suite (`npm run test:unit`) covers the copy, escaping, time-zone formatting and every provider failure message.
 
@@ -138,7 +138,7 @@ npm run lint
 npm run typecheck
 npm run build
 npm run verify:db        # checks all migrations, RLS and private buckets
-npm run test:unit        # validation and authorization helpers
+npm run test:unit        # validation, authorization and date/time field helpers
 npm run test:integration # boots the app: 82 checks with 3 throwaway users, then cleans up
 npm test                 # unit + integration
 ```
@@ -186,6 +186,7 @@ domain in `RESEND_FROM_EMAIL` is one of the verified sending domains on the Rese
 - [x] Mobile burger navigation (≤900 px) with separate Workspace and Communication groups, so Messages and Files are no longer workspace tabs.
 - [x] Dedicated Projects screen with search, filtering, pagination and owner project settings.
 - [x] Dedicated Timeline/calendar screen with day grouping, attendee selection and RSVP controls.
+- [x] Calendar and clock-dial pickers for every date and time field (meetings, task due dates, project start and target dates): defaults to the next clean half-hour slot, keeps the meeting length when the start moves, offers Today/Tomorrow/Next week and 30 min–2 h chips, and blocks an end time that is not after the start. Below 700 px the panel opens as a bottom sheet with a pinned Done row.
 - [x] Dedicated Reports screen computed from live database figures, with CSV export.
 - [x] Dedicated Settings screen for profile and notification preferences.
 - [x] Task editing, assignment, comments, checklists, reviews and status history.

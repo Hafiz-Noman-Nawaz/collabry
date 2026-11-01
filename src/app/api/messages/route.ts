@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionUser } from "@/lib/authz";
@@ -12,9 +12,12 @@ import { ALLOWED_UPLOAD_TYPE_SET } from "@/lib/uploads";
 const jsonSchema = z.object({ conversationId: z.string().uuid(), body: z.string().trim().min(1).max(4000) });
 
 const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024;
+const MAX_ATTACHMENT_FILES = 5;
 
+// Storage paths stay server-side: attachments are opened through /api/attachments/[id],
+// which re-checks conversation membership before signing a URL.
 const MESSAGE_SELECT =
-  "id, conversation_id, sender_id, body, kind, created_at, edited_at, message_attachments(id, file_name, content_type, file_size, storage_path), message_reactions(user_id, emoji)";
+  "id, conversation_id, sender_id, body, kind, created_at, edited_at, deleted_at, message_attachments(id, file_name, content_type, file_size), message_reactions(user_id, emoji)";
 
 function safeName(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 120) || "attachment";
@@ -44,11 +47,7 @@ export async function GET(request: Request) {
   // Oldest first for rendering; names are merged because profiles cannot be embedded.
   const rows = (data ?? []).reverse();
   const senders = await loadProfiles(supabase, rows.map((row) => row.sender_id));
-  const messages = rows.map((row) => ({
-    ...row,
-    profiles: profileOf(senders, row.sender_id),
-    message_attachments: (row.message_attachments ?? []).filter((attachment: { storage_path: string }) => !attachment.storage_path.startsWith("_")),
-  }));
+  const messages = rows.map((row) => ({ ...row, profiles: profileOf(senders, row.sender_id) }));
   return NextResponse.json({ messages, total: count ?? 0 });
 }
 
@@ -58,13 +57,12 @@ export async function POST(request: Request) {
 
   let conversationId = "";
   let body = "";
-  let file: File | null = null;
+  let files: File[] = [];
   if (isMultipart) {
     const formData = await request.formData();
     conversationId = String(formData.get("conversationId") ?? "");
     body = String(formData.get("body") ?? "").trim();
-    const candidate = formData.get("file");
-    file = candidate instanceof File && candidate.size > 0 ? candidate : null;
+    files = formData.getAll("files").filter((entry): entry is File => entry instanceof File && entry.size > 0);
   } else {
     const parsed = jsonSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return badRequest("Invalid message.");
@@ -72,11 +70,12 @@ export async function POST(request: Request) {
     body = parsed.data.body;
   }
   if (!parseUuid(conversationId)) return badRequest("A valid conversation is required.");
-  if (body.length === 0 && !file) return badRequest("Message cannot be empty.");
+  if (body.length === 0 && files.length === 0) return badRequest("Message cannot be empty.");
   if (body.length > 4000) return badRequest("Message is too long.");
-  if (file) {
+  if (files.length > MAX_ATTACHMENT_FILES) return badRequest(`Attach at most ${MAX_ATTACHMENT_FILES} files per message.`);
+  for (const file of files) {
     if (file.size > MAX_ATTACHMENT_SIZE) return badRequest("Attachments must be smaller than 25 MB.");
-    if (!ALLOWED_UPLOAD_TYPE_SET.has(file.type)) return badRequest("This file type is not supported.");
+    if (!ALLOWED_UPLOAD_TYPE_SET.has(file.type)) return badRequest(`${safeName(file.name)} is not a supported file type.`);
   }
 
   const supabase = await createClient();
@@ -96,56 +95,82 @@ export async function POST(request: Request) {
   const { data, error } = await supabase
     .from("messages")
     .insert({ conversation_id: conversationId, sender_id: user.id, body: body || "(attachment)" })
-    .select("id, conversation_id, sender_id, body, kind, created_at, edited_at")
+    .select("id, conversation_id, sender_id, body, kind, created_at, edited_at, deleted_at")
     .single();
   if (error || !data) return badRequest(error?.message ?? "Unable to send the message.");
 
-  let attachmentRow: Record<string, unknown> | null = null;
-  if (file) {
-    const fileName = safeName(file.name);
-    const storagePath = `${user.id}/${randomUUID()}-${fileName}`;
-    const upload = await supabase.storage.from("message-attachments").upload(storagePath, await file.arrayBuffer(), { contentType: file.type, upsert: false });
-    if (upload.error) return badRequest(upload.error.message);
-    const { data: inserted, error: attachmentError } = await supabase
-      .from("message_attachments")
-      .insert({ message_id: data.id, storage_path: storagePath, file_name: fileName, content_type: file.type, file_size: file.size })
-      .select("id, file_name, content_type, file_size, storage_path")
-      .single();
-    if (attachmentError) {
-      await supabase.storage.from("message-attachments").remove([storagePath]);
-      return badRequest(attachmentError.message);
+  let attachmentRows: Record<string, unknown>[] = [];
+  if (files.length > 0) {
+    // Uploads run in parallel; a single failed file fails the whole message so
+    // the sender never sees a half-delivered attachment.
+    const staged: { path: string; row: Record<string, unknown> }[] = [];
+    try {
+      const uploaded = await Promise.all(
+        files.map(async (file) => {
+          const fileName = safeName(file.name);
+          const storagePath = `${user.id}/${randomUUID()}-${fileName}`;
+          const { error: uploadError } = await supabase.storage
+            .from("message-attachments")
+            .upload(storagePath, await file.arrayBuffer(), { contentType: file.type, upsert: false });
+          if (uploadError) throw new Error(uploadError.message);
+          return { storagePath, fileName, file };
+        }),
+      );
+      for (const { storagePath, fileName, file } of uploaded) {
+        staged.push({
+          path: storagePath,
+          row: { message_id: data.id, storage_path: storagePath, file_name: fileName, content_type: file.type, file_size: file.size },
+        });
+      }
+      const { data: inserted, error: attachmentError } = await supabase
+        .from("message_attachments")
+        .insert(staged.map((entry) => entry.row))
+        .select("id, file_name, content_type, file_size");
+      if (attachmentError) throw new Error(attachmentError.message);
+      attachmentRows = inserted ?? [];
+    } catch (uploadFailure) {
+      if (staged.length > 0) await supabase.storage.from("message-attachments").remove(staged.map((entry) => entry.path));
+      // RLS gives members no DELETE policy on messages, so the orphaned row is
+      // soft-deleted instead of removed; it never renders because GET filters on deleted_at.
+      await supabase.from("messages").update({ deleted_at: new Date().toISOString() }).eq("id", data.id).eq("sender_id", user.id);
+      return badRequest(uploadFailure instanceof Error ? uploadFailure.message : "Unable to attach that file.");
     }
-    attachmentRow = inserted;
   }
 
-  // Delivery marker for the sender plus notifications for everyone else.
-  await supabase
-    .from("conversation_members")
-    .update({ last_read_at: new Date().toISOString() })
-    .eq("conversation_id", conversationId)
-    .eq("user_id", user.id);
+  const sender = await loadProfiles(supabase, [user.id]);
+  const senderName = profileOf(sender, user.id)?.full_name?.trim().split(" ")[0] || "A teammate";
 
-  const { data: members } = await supabase.from("conversation_members").select("user_id").eq("conversation_id", conversationId);
-  const recipientIds = (members ?? []).map((row) => row.user_id).filter((id) => id !== user.id);
-  if (recipientIds.length > 0) {
+  // Delivery marking and notification fan-out must not delay the reply: the
+  // sender's own copy already appears, and recipients get the row over Realtime
+  // the moment the insert commits.
+  after(async () => {
+    await supabase
+      .from("conversation_members")
+      .update({ last_read_at: new Date().toISOString() })
+      .eq("conversation_id", conversationId)
+      .eq("user_id", user.id);
+
+    const { data: members } = await supabase.from("conversation_members").select("user_id").eq("conversation_id", conversationId);
+    const recipientIds = (members ?? []).map((row) => row.user_id).filter((id) => id !== user.id);
+    if (recipientIds.length === 0) return;
+
     await notifyTeam({
       userIds: recipientIds,
       teamId: conversation.team_id,
       kind: "message",
-      title: `New message in ${conversation.title ?? "Team conversation"}`,
+      title: `${senderName} sent a message${conversation.title ? ` in ${conversation.title}` : ""}`,
       body: (body || "Sent an attachment").slice(0, 140),
       resourceType: "conversation",
       resourceId: conversationId,
     });
-  }
+  });
 
-  const sender = await loadProfiles(supabase, [user.id]);
   return NextResponse.json(
     {
       message: {
         ...data,
         profiles: profileOf(sender, user.id),
-        message_attachments: attachmentRow ? [attachmentRow] : [],
+        message_attachments: attachmentRows,
         message_reactions: [],
       },
     },

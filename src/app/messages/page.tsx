@@ -1,10 +1,25 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  ClipboardEvent,
+  DragEvent,
+  FormEvent,
+  TouchEvent as ReactTouchEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { WorkspaceShell } from "@/components/WorkspaceShell";
 import { createClient } from "@/lib/supabase/browser";
 import { formatBytes } from "@/lib/format";
+import { ALLOWED_UPLOAD_TYPES, UPLOAD_ACCEPT, typeBadge } from "@/lib/uploads";
+
+/* eslint-disable @next/next/no-img-element -- previews come from blob: and short-lived signed storage URLs, which next/image cannot optimize. */
 
 type Conversation = {
   id: string;
@@ -17,6 +32,15 @@ type Conversation = {
   messages: Array<{ body: string; sender_id: string; created_at: string }>;
 };
 
+type Attachment = {
+  id: string;
+  file_name: string;
+  content_type: string;
+  file_size: number;
+  /** Object URL for a file that has not reached storage yet. */
+  blob_url?: string;
+};
+
 type Message = {
   id: string;
   conversation_id: string;
@@ -24,17 +48,70 @@ type Message = {
   body: string;
   created_at: string;
   edited_at: string | null;
+  deleted_at?: string | null;
   profiles: { full_name: string } | null;
-  message_attachments: Array<{ id: string; file_name: string; content_type: string; file_size: number }>;
+  message_attachments: Attachment[];
   message_reactions: Array<{ user_id: string; emoji: string }>;
+  pending?: boolean;
+  failed?: boolean;
 };
 
 type Member = { user_id: string; joined_at?: string; last_read_at?: string | null; profiles: { full_name: string } | null };
-
+type TeamMember = { user_id: string; profiles: { full_name: string } | null };
 type Channel = ReturnType<ReturnType<typeof createClient>["channel"]>;
+type StagedFile = { key: string; file: File; preview: string | null };
+type MenuState = { messageId: string; x: number; y: number };
+type Viewer = { src: string; name: string } | null;
 
 const PAGE_SIZE = 30;
 const QUICK_REACTIONS = ["👍", "🎉", "❤️", "👀"];
+const MAX_FILES = 5;
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const SUPPORTED_TYPES = new Set<string>(ALLOWED_UPLOAD_TYPES);
+const MENU_WIDTH = 218;
+const MENU_HEIGHT = 228;
+const NEAR_BOTTOM_PX = 180;
+
+function isImageType(contentType: string) {
+  return contentType.startsWith("image/");
+}
+
+/** Kept outside the component: React's compiler flags clock reads during render. */
+function stamp() {
+  return new Date().toISOString();
+}
+
+function localMessageId(sequence: number) {
+  return `local-${Date.now()}-${sequence}`;
+}
+
+function attachmentSrc(attachment: Attachment) {
+  return attachment.blob_url ?? `/api/attachments/${attachment.id}?inline=1`;
+}
+
+function computeUnread(conversations: Conversation[], userId: string) {
+  const flags: Record<string, boolean> = {};
+  for (const conversation of conversations) {
+    const mine = conversation.conversation_members?.find((row) => row.user_id === userId);
+    const latest = conversation.messages?.[0]?.created_at;
+    flags[conversation.id] = !!latest && (!mine?.last_read_at || new Date(mine.last_read_at) < new Date(latest));
+  }
+  return flags;
+}
+
+function formatClock(value: string) {
+  return new Date(value).toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit" });
+}
+
+function dayLabel(value: string) {
+  const date = new Date(value);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return "Today";
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
 
 export default function MessagesPage() {
   const router = useRouter();
@@ -44,21 +121,89 @@ export default function MessagesPage() {
   const [total, setTotal] = useState(0);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [body, setBody] = useState("");
-  const [attachment, setAttachment] = useState<File | null>(null);
+  const [staged, setStaged] = useState<StagedFile[]>([]);
   const [userId, setUserId] = useState("");
-  const [message, setMessage] = useState("");
+  const [notice, setNotice] = useState("");
   const [teamId, setTeamId] = useState("");
   const [showNewConversation, setShowNewConversation] = useState(false);
   const [newConversationTitle, setNewConversationTitle] = useState("");
   const [members, setMembers] = useState<Member[]>([]);
-  const [teamMembers, setTeamMembers] = useState<Array<{ user_id: string; profiles: { full_name: string } | null }>>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [showMembers, setShowMembers] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingBody, setEditingBody] = useState("");
   const [typing, setTyping] = useState<Record<string, number>>({});
   const [unread, setUnread] = useState<Record<string, boolean>>({});
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const [viewer, setViewer] = useState<Viewer>(null);
+  const [dragging, setDragging] = useState(false);
+  const [showJump, setShowJump] = useState(false);
+  const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
+
   const typingRef = useRef<Channel | null>(null);
   const typingTimers = useRef<Record<string, number>>({});
+  const selectedIdRef = useRef<string>("");
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottom = useRef(true);
+  const dragDepth = useRef(0);
+  const hydrateTimer = useRef<number | undefined>(undefined);
+  const sidebarTimer = useRef<number | undefined>(undefined);
+  const longPressTimer = useRef<number | undefined>(undefined);
+  const drafts = useRef<Map<string, string>>(new Map());
+  const failedSends = useRef<Map<string, { body: string; files: File[] }>>(new Map());
+  const blobUrls = useRef<Set<string>>(new Set());
+  const localSeq = useRef(0);
+
+  useEffect(
+    () => () => {
+      blobUrls.current.forEach((url) => URL.revokeObjectURL(url));
+      window.clearTimeout(hydrateTimer.current);
+      window.clearTimeout(sidebarTimer.current);
+    },
+    [],
+  );
+
+  const myName = useMemo(() => {
+    const found = teamMembers.find((member) => member.user_id === userId)?.profiles?.full_name?.trim();
+    return found || "Someone";
+  }, [teamMembers, userId]);
+
+  function announce(partial: string) {
+    setNotice(partial);
+  }
+
+  /** Newest page from the server, merged by id so optimistic rows and older pages survive. */
+  const hydrate = useCallback(async (conversationId: string) => {
+    const response = await fetch(`/api/messages?conversationId=${conversationId}&limit=${PAGE_SIZE}&offset=0`);
+    if (!response.ok) return;
+    const result = await response.json();
+    const fresh = (result.messages ?? []) as Message[];
+    setTotal(result.total ?? 0);
+    setMessages((current) => {
+      const freshIds = new Set(fresh.map((item) => item.id));
+      const kept = current.filter((item) => item.pending || item.failed || !freshIds.has(item.id));
+      return [...kept, ...fresh].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    });
+  }, []);
+
+  const refreshSidebar = useCallback(async () => {
+    if (!teamId) return;
+    const response = await fetch(`/api/conversations?teamId=${teamId}`);
+    if (!response.ok) return;
+    const result = await response.json();
+    const loaded = (result.conversations ?? []) as Conversation[];
+    setConversations(loaded);
+    setUnread(computeUnread(loaded, userId));
+  }, [teamId, userId]);
+
+  async function markRead(conversationId: string) {
+    const response = await fetch("/api/messages", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversationId }),
+    });
+    if (response.ok) setUnread((current) => ({ ...current, [conversationId]: false }));
+  }
 
   useEffect(() => {
     const supabase = createClient();
@@ -78,20 +223,14 @@ export default function MessagesPage() {
       const response = await fetch(`/api/conversations?teamId=${firstTeamId}`);
       if (!response.ok) {
         const result = await response.json().catch(() => ({}));
-        if (active) setMessage(result.error ?? "Unable to load conversations.");
+        if (active) announce(result.error ?? "Unable to load conversations.");
         return;
       }
       const result = await response.json();
       if (!active) return;
-      const loaded: Conversation[] = result.conversations ?? [];
+      const loaded = (result.conversations ?? []) as Conversation[];
       setConversations(loaded);
-      const flags: Record<string, boolean> = {};
-      for (const conversation of loaded) {
-        const mine = conversation.conversation_members?.find((row) => row.user_id === data.user?.id);
-        const latest = conversation.messages?.[0]?.created_at;
-        flags[conversation.id] = !!latest && (!mine?.last_read_at || new Date(mine.last_read_at) < new Date(latest));
-      }
-      setUnread(flags);
+      setUnread(computeUnread(loaded, data.user.id));
       if (loaded[0]) setSelected(loaded[0]);
       const memberResponse = await fetch(`/api/members?teamId=${firstTeamId}`);
       if (memberResponse.ok && active) setTeamMembers((await memberResponse.json()).members ?? []);
@@ -102,49 +241,120 @@ export default function MessagesPage() {
     };
   }, [router]);
 
+  // One page-level stream: every message, attachment and reaction the caller can
+  // read arrives here, so a message from a teammate never needs a page refresh.
+  useEffect(() => {
+    if (!userId) return;
+    const supabase = createClient();
+    const channel = supabase.channel("chat-stream");
+
+    function rowOf(event: { new: unknown; old: unknown; eventType?: string }) {
+      return (event.eventType === "DELETE" ? event.old : event.new) as Record<string, unknown> | undefined;
+    }
+
+    function scheduleHydrate(conversationId: string) {
+      window.clearTimeout(hydrateTimer.current);
+      hydrateTimer.current = window.setTimeout(() => {
+        hydrate(conversationId);
+      }, 220);
+    }
+
+    function scheduleSidebar() {
+      window.clearTimeout(sidebarTimer.current);
+      sidebarTimer.current = window.setTimeout(refreshSidebar, 700);
+    }
+
+    channel
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "messages" },
+        (event) => {
+          const row = rowOf(event);
+          const conversationId = row?.conversation_id as string | undefined;
+          if (!conversationId) return;
+          if (conversationId !== selectedIdRef.current) {
+            scheduleSidebar();
+            return;
+          }
+          if (event.eventType === "DELETE" || row?.deleted_at) {
+            setMessages((current) => current.filter((item) => item.id !== row?.id));
+            scheduleSidebar();
+            return;
+          }
+          if (!stickToBottom.current) setShowJump(true);
+          scheduleHydrate(conversationId);
+          scheduleSidebar();
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "message_attachments" },
+        () => {
+          if (selectedIdRef.current) scheduleHydrate(selectedIdRef.current);
+          scheduleSidebar();
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "message_reactions" },
+        (event) => {
+          const row = (event.eventType === "DELETE" ? event.old : event.new) as
+            | { message_id: string; user_id: string; emoji: string }
+            | undefined;
+          if (!row?.message_id) return;
+          setMessages((current) =>
+            current.map((item) => {
+              if (item.id !== row.message_id) return item;
+              const without = (item.message_reactions ?? []).filter(
+                (reaction) => !(reaction.user_id === row.user_id && reaction.emoji === row.emoji),
+              );
+              return {
+                ...item,
+                message_reactions: event.eventType === "DELETE" ? without : [...without, { user_id: row.user_id, emoji: row.emoji }],
+              };
+            }),
+          );
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [hydrate, refreshSidebar, userId]);
+
   useEffect(() => {
     if (!selected) return;
     const conversationId = selected.id;
-    const supabase = createClient();
+    selectedIdRef.current = conversationId;
+    stickToBottom.current = true;
     let active = true;
-    let channel: ReturnType<typeof supabase.channel> | undefined;
 
     async function loadMessages() {
       setMessages([]);
+      setTotal(0);
       const response = await fetch(`/api/messages?conversationId=${conversationId}&limit=${PAGE_SIZE}&offset=0`);
       if (!response.ok || !active) return;
       const result = await response.json();
       if (!active) return;
       setMessages(result.messages ?? []);
       setTotal(result.total ?? 0);
-      // Delivery marker so the unread dot clears after opening a conversation.
-      await fetch("/api/messages", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId }) });
-      setUnread((current) => ({ ...current, [conversationId]: false }));
-
+      // Delivery marker so the unread dot clears once the thread is opened.
+      await markRead(conversationId);
       const membersResponse = await fetch(`/api/conversations/${conversationId}/members`);
       if (membersResponse.ok && active) setMembers((await membersResponse.json()).members ?? []);
-
-      channel = supabase
-        .channel(`conversation:${conversationId}`)
-        .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${conversationId}` }, (event) => {
-          setMessages((current) => (current.some((item) => item.id === event.new.id) ? current : [...current, event.new as unknown as Message]));
-          setTotal((current) => current + 1);
-        })
-        .subscribe();
     }
 
     loadMessages();
     return () => {
       active = false;
-      if (channel) supabase.removeChannel(channel);
     };
   }, [selected]);
 
   useEffect(() => {
     if (!selected) return;
-    const conversationId = selected.id;
     const supabase = createClient();
-    const channel = supabase.channel(`typing:${conversationId}`);
+    const channel = supabase.channel(`typing:${selected.id}`);
     typingRef.current = channel;
     channel.on("broadcast", { event: "typing" }, ({ payload }) => {
       const sender = payload as { userId: string; name: string };
@@ -166,41 +376,174 @@ export default function MessagesPage() {
     };
   }, [selected, userId]);
 
+  // Keep the view pinned to the newest message unless the reader scrolled away.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const last = messages[messages.length - 1];
+    if (stickToBottom.current || (last && last.sender_id === userId)) {
+      list.scrollTop = list.scrollHeight;
+    }
+    if (messages.length > 0 && document.visibilityState === "visible" && selectedIdRef.current) {
+      markRead(selectedIdRef.current);
+    }
+  }, [messages, userId]);
+
+  useEffect(() => {
+    if (!menu && !viewer) return;
+    function onKey(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMenu(null);
+        setViewer(null);
+      }
+    }
+    function onPointer(event: globalThis.PointerEvent) {
+      if ((event.target as HTMLElement).closest(".message-menu") || (event.target as HTMLElement).closest(".message-bubble")) return;
+      setMenu(null);
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onPointer, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointer, true);
+    };
+  }, [menu, viewer]);
+
   const typingNames = useMemo(() => Object.keys(typing), [typing]);
 
   function announceTyping() {
     const channel = typingRef.current;
     if (!channel || !userId) return;
-    channel.send({ type: "broadcast", event: "typing", payload: { userId, name: "Someone" } });
+    channel.send({ type: "broadcast", event: "typing", payload: { userId, name: myName } });
   }
 
-  async function send(event: FormEvent) {
-    event.preventDefault();
-    if (!selected || (!body.trim() && !attachment)) return;
+  function openConversation(conversation: Conversation) {
+    if (selected) drafts.current.set(selected.id, body);
+    if (conversation.id === selected?.id) return;
+    setBody(drafts.current.get(conversation.id) ?? "");
+    clearStaged();
+    setMenu(null);
+    setSelected(conversation);
+  }
+
+  async function deliver(conversationId: string, text: string, files: File[], localId: string) {
     const formData = new FormData();
-    formData.set("conversationId", selected.id);
-    formData.set("body", body);
-    if (attachment) formData.set("file", attachment);
-    const response = await fetch("/api/messages", { method: "POST", body: formData });
-    const result = await response.json();
-    if (!response.ok) {
-      setMessage(result.error ?? "Unable to send message.");
-      return;
+    formData.set("conversationId", conversationId);
+    formData.set("body", text);
+    for (const file of files) formData.append("files", file);
+    try {
+      const response = await fetch("/api/messages", { method: "POST", body: formData });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Unable to send message.");
+      const confirmed = result.message as Message;
+      setMessages((current) => {
+        // Realtime may have already delivered the server row; drop that copy so
+        // the placeholder is replaced exactly once.
+        const withoutDuplicate = current.filter((item) => item.id === localId || item.id !== confirmed.id);
+        return withoutDuplicate.map((item) => (item.id === localId ? { ...confirmed, pending: false, failed: false } : item));
+      });
+      failedSends.current.delete(localId);
+    } catch (error) {
+      failedSends.current.set(localId, { body: text, files });
+      setMessages((current) => current.map((item) => (item.id === localId ? { ...item, pending: false, failed: true } : item)));
+      announce(error instanceof Error ? error.message : "Unable to send message.");
     }
-    setMessages((current) => (current.some((item) => item.id === result.message.id) ? current : [...current, result.message]));
-    setTotal((current) => current + 1);
+  }
+
+  function buildPlaceholder(conversationId: string, text: string, files: StagedFile[]): { localId: string; placeholder: Message } {
+    localSeq.current += 1;
+    const localId = localMessageId(localSeq.current);
+    return {
+      localId,
+      placeholder: {
+        id: localId,
+        conversation_id: conversationId,
+        sender_id: userId,
+        body: text,
+        created_at: stamp(),
+        edited_at: null,
+        profiles: { full_name: myName },
+        message_attachments: files.map((entry) => ({
+          id: `${localId}-${entry.key}`,
+          file_name: entry.file.name,
+          content_type: entry.file.type,
+          file_size: entry.file.size,
+          blob_url: entry.preview ?? undefined,
+        })),
+        message_reactions: [],
+        pending: true,
+      },
+    };
+  }
+
+  function enqueue(message: Message) {
+    stickToBottom.current = true;
+    setShowJump(false);
+    setMessages((current) => [...current, message]);
+  }
+
+  function send(event: FormEvent) {
+    event.preventDefault();
+    submit();
+  }
+
+  /** Appends the message locally first, so the sender never waits on storage or notifications. */
+  function submit() {
+    if (!selected) return;
+    const text = body.trim();
+    if (!text && staged.length === 0) return;
+    const files = staged.map((entry) => entry.file);
+    const { localId, placeholder } = buildPlaceholder(selected.id, text, staged);
     setBody("");
-    setAttachment(null);
+    drafts.current.delete(selected.id);
+    setStaged([]);
+    enqueue(placeholder);
+    deliver(selected.id, text, files, localId);
+  }
+
+  function retry(localId: string) {
+    const original = failedSends.current.get(localId);
+    if (!original || !selected) return;
+    failedSends.current.delete(localId);
+    const files = original.files;
+    setMessages((current) =>
+      current.map((item) =>
+        item.id === localId
+          ? {
+              ...item,
+              failed: false,
+              pending: true,
+              message_attachments: files.map((file, index) => ({
+                id: `${localId}-${index}`,
+                file_name: file.name,
+                content_type: file.type,
+                file_size: file.size,
+                blob_url: isImageType(file.type) ? URL.createObjectURL(file) : undefined,
+              })),
+            }
+          : item,
+      ),
+    );
+    deliver(selected.id, original.body, files, localId);
   }
 
   async function loadOlder() {
     if (!selected || loadingOlder) return;
     setLoadingOlder(true);
-    const response = await fetch(`/api/messages?conversationId=${selected.id}&limit=${PAGE_SIZE}&offset=${messages.length}`);
+    const list = listRef.current;
+    const heightBefore = list?.scrollHeight ?? 0;
+    const topBefore = list?.scrollTop ?? 0;
+    const response = await fetch(`/api/messages?conversationId=${selected.id}&limit=${PAGE_SIZE}&offset=${messages.filter((item) => !item.pending).length}`);
     if (response.ok) {
       const result = await response.json();
-      const older = (result.messages as Message[]).filter((item) => !messages.some((existing) => existing.id === item.id));
-      setMessages((current) => [...older, ...current]);
+      const older = ((result.messages ?? []) as Message[]).filter((item) => !messages.some((existing) => existing.id === item.id));
+      setMessages((current) => [...older, ...current.filter((item) => !older.some((row) => row.id === item.id))]);
+      requestAnimationFrame(() => {
+        const node = listRef.current;
+        if (node) {
+          node.scrollTop = node.scrollHeight - heightBefore + topBefore;
+        }
+      });
     }
     setLoadingOlder(false);
   }
@@ -214,7 +557,7 @@ export default function MessagesPage() {
     });
     const result = await response.json();
     if (!response.ok) {
-      setMessage(result.error ?? "Unable to edit the message.");
+      announce(result.error ?? "Unable to edit the message.");
       return;
     }
     setMessages((current) => current.map((item) => (item.id === messageId ? { ...item, ...result.message } : item)));
@@ -222,11 +565,11 @@ export default function MessagesPage() {
   }
 
   async function removeMessage(messageId: string) {
-    if (!window.confirm("Delete this message?")) return;
+    if (!window.confirm("Delete this message for everyone?")) return;
     const response = await fetch(`/api/messages/${messageId}`, { method: "DELETE" });
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
-      setMessage(result.error ?? "Unable to delete the message.");
+      announce(result.error ?? "Unable to delete the message.");
       return;
     }
     setMessages((current) => current.filter((item) => item.id !== messageId));
@@ -251,6 +594,133 @@ export default function MessagesPage() {
     );
   }
 
+  function openMenuAt(x: number, y: number, message: Message) {
+    if (message.pending || message.failed) return;
+    const padded = 12;
+    setMenu({
+      messageId: message.id,
+      x: Math.max(padded, Math.min(x, window.innerWidth - MENU_WIDTH - padded)),
+      y: Math.max(padded, Math.min(y, window.innerHeight - MENU_HEIGHT - padded)),
+    });
+  }
+
+  function startLongPress(event: ReactTouchEvent<HTMLDivElement>, message: Message) {
+    const touch = event.touches[0];
+    if (!touch) return;
+    window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = window.setTimeout(() => openMenuAt(touch.clientX - 20, touch.clientY - 20, message), 450);
+  }
+
+  function cancelLongPress() {
+    window.clearTimeout(longPressTimer.current);
+  }
+
+  async function copyText(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setMenu(null);
+    } catch {
+      announce("Your browser blocked copying to the clipboard.");
+    }
+  }
+
+  async function openAttachment(attachmentId: string) {
+    const response = await fetch(`/api/attachments/${attachmentId}`);
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      announce(result.error ?? "Unable to open that attachment.");
+      return;
+    }
+    window.open(result.url, "_blank", "noopener,noreferrer");
+  }
+
+  function clearStaged() {
+    setStaged((current) => {
+      for (const entry of current) {
+        if (entry.preview) {
+          URL.revokeObjectURL(entry.preview);
+          blobUrls.current.delete(entry.preview);
+        }
+      }
+      return [];
+    });
+  }
+
+  function acceptFiles(incoming: File[]) {
+    if (incoming.length === 0) return;
+    const rejected: string[] = [];
+    const usable = incoming.filter((file) => {
+      if (file.size > MAX_FILE_BYTES) {
+        rejected.push(`${file.name} is over 25 MB.`);
+        return false;
+      }
+      if (!SUPPORTED_TYPES.has(file.type)) {
+        rejected.push(`${file.name || "That file"} is not a supported file type.`);
+        return false;
+      }
+      return true;
+    });
+    if (rejected.length > 0) announce(rejected.join(" "));
+    if (usable.length === 0) return;
+    setStaged((current) => {
+      const next = [...current];
+      for (const file of usable) {
+        if (next.length >= MAX_FILES) {
+          announce(`Attach at most ${MAX_FILES} files per message.`);
+          break;
+        }
+        if (next.some((entry) => entry.file.name === file.name && entry.file.size === file.size)) continue;
+        const preview = isImageType(file.type) ? URL.createObjectURL(file) : null;
+        if (preview) blobUrls.current.add(preview);
+        localSeq.current += 1;
+        next.push({ key: `s${localSeq.current}`, file, preview });
+      }
+      return next;
+    });
+  }
+
+  function chooseFiles(event: ChangeEvent<HTMLInputElement>) {
+    acceptFiles(Array.from(event.target.files ?? []));
+    event.target.value = "";
+  }
+
+  function pasteFiles(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const files = Array.from(event.clipboardData?.files ?? []);
+    if (files.length > 0) {
+      event.preventDefault();
+      acceptFiles(files);
+    }
+  }
+
+  function removeStaged(key: string) {
+    setStaged((current) => {
+      const target = current.find((entry) => entry.key === key);
+      if (target?.preview) {
+        URL.revokeObjectURL(target.preview);
+        blobUrls.current.delete(target.preview);
+      }
+      return current.filter((entry) => entry.key !== key);
+    });
+  }
+
+  function handleDragEnter(event: DragEvent) {
+    if (!event.dataTransfer?.types?.includes("Files")) return;
+    dragDepth.current += 1;
+    setDragging(true);
+  }
+
+  function handleDragLeave() {
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragging(false);
+  }
+
+  function handleDrop(event: DragEvent) {
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    acceptFiles(Array.from(event.dataTransfer?.files ?? []));
+  }
+
   async function createConversation(event: FormEvent) {
     event.preventDefault();
     if (!teamId || !newConversationTitle.trim()) return;
@@ -261,13 +731,23 @@ export default function MessagesPage() {
     });
     const result = await response.json();
     if (!response.ok) {
-      setMessage(result.error ?? "Unable to create conversation.");
+      announce(result.error ?? "Unable to create conversation.");
       return;
     }
     setConversations((current) => [result.conversation, ...current]);
-    setSelected({ ...result.conversation, conversation_members: [], messages: [] });
     setNewConversationTitle("");
     setShowNewConversation(false);
+    setSelected({ ...result.conversation, conversation_members: [{ user_id: userId, last_read_at: null }], messages: [] });
+  }
+
+  async function markConversationRead(conversationId: string) {
+    await markRead(conversationId);
+  }
+
+  async function markAllRead() {
+    const unreadIds = conversations.filter((conversation) => unread[conversation.id]).map((conversation) => conversation.id);
+    if (unreadIds.length === 0) return;
+    await Promise.all(unreadIds.map((id) => markRead(id)));
   }
 
   async function addMember(memberId: string) {
@@ -279,7 +759,7 @@ export default function MessagesPage() {
     });
     const result = await response.json();
     if (!response.ok) {
-      setMessage(result.error ?? "Unable to add that member.");
+      announce(result.error ?? "Unable to add that member.");
       return;
     }
     const refreshed = await fetch(`/api/conversations/${selected.id}/members`);
@@ -291,34 +771,17 @@ export default function MessagesPage() {
     const response = await fetch(`/api/conversations/${selected.id}/members?userId=${memberId}`, { method: "DELETE" });
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
-      setMessage(result.error ?? "Unable to remove that member.");
+      announce(result.error ?? "Unable to remove that member.");
       return;
     }
     setMembers((current) => current.filter((member) => member.user_id !== memberId));
   }
 
-  async function openAttachment(attachmentId: string) {
-    const response = await fetch(`/api/attachments/${attachmentId}`);
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setMessage(result.error ?? "Unable to open that attachment.");
-      return;
-    }
-    window.open(result.url, "_blank", "noopener,noreferrer");
-  }
-
-  function chooseAttachment(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0] ?? null;
-    if (file && file.size > 25 * 1024 * 1024) {
-      setMessage("Attachments must be smaller than 25 MB.");
-      event.target.value = "";
-      return;
-    }
-    setAttachment(file);
-  }
-
   const memberIds = new Set(members.map((member) => member.user_id));
   const addable = teamMembers.filter((member) => !memberIds.has(member.user_id));
+  const menuMessage = menu ? messages.find((item) => item.id === menu.messageId) ?? null : null;
+  const unreadCount = conversations.filter((conversation) => unread[conversation.id]).length;
+  const canSend = !!selected && (body.trim().length > 0 || staged.length > 0);
 
   return (
     <WorkspaceShell active="" dense>
@@ -326,39 +789,73 @@ export default function MessagesPage() {
         <aside className="conversation-list">
           <div className="chat-list-heading">
             <h1>Conversations</h1>
-            <button aria-label="New conversation" onClick={() => setShowNewConversation((current) => !current)}>+</button>
+            <div className="chat-list-actions">
+              {unreadCount > 0 && (
+                <button className="chat-mark-all" onClick={markAllRead} title="Mark every conversation as read">
+                  Mark all read
+                </button>
+              )}
+              <button aria-label="New conversation" onClick={() => setShowNewConversation((current) => !current)}>
+                +
+              </button>
+            </div>
           </div>
           {showNewConversation && (
             <form className="new-conversation-form" onSubmit={createConversation}>
-              <input value={newConversationTitle} onChange={(event) => setNewConversationTitle(event.target.value)} placeholder="Conversation name" autoFocus />
+              <input
+                value={newConversationTitle}
+                onChange={(event) => setNewConversationTitle(event.target.value)}
+                placeholder="Conversation name"
+                autoFocus
+              />
               <button disabled={!newConversationTitle.trim()}>Create</button>
             </form>
           )}
           {conversations.length === 0 ? (
-            <div className="chat-empty-state"><span>□</span><strong>No conversations yet</strong><p>Create a conversation to get started.</p></div>
+            <div className="chat-empty-state">
+              <span>□</span>
+              <strong>No conversations yet</strong>
+              <p>Create a conversation to get started.</p>
+            </div>
           ) : (
             conversations.map((conversation) => (
-              <button
-                key={conversation.id}
-                className={`conversation-item ${selected?.id === conversation.id ? "selected" : ""}`}
-                onClick={() => setSelected(conversation)}
-              >
-                <span className="conversation-mark">{(conversation.title ?? "C").slice(0, 1)}</span>
-                <span>
-                  {conversation.title ?? "Untitled conversation"}
-                  <small>
-                    {conversation.messages?.[0]
-                      ? `${conversation.messages[0].body.slice(0, 34)}${conversation.messages[0].body.length > 34 ? "…" : ""}`
-                      : "No messages yet"}
-                  </small>
-                </span>
-                {unread[conversation.id] && <i style={{ width: 6, height: 6, borderRadius: "50%", background: "#31d9ed", marginLeft: "auto" }} aria-label="unread" />}
-              </button>
+              <div key={conversation.id} className={`conversation-item ${selected?.id === conversation.id ? "selected" : ""}`}>
+                <button className="conversation-open" onClick={() => openConversation(conversation)}>
+                  <span className="conversation-mark">{(conversation.title ?? "C").slice(0, 1)}</span>
+                  <span className="conversation-text">
+                    <strong>{conversation.title ?? "Untitled conversation"}</strong>
+                    <small>
+                      {conversation.messages?.[0]
+                        ? `${conversation.messages[0].body.slice(0, 34)}${conversation.messages[0].body.length > 34 ? "…" : ""}`
+                        : "No messages yet"}
+                    </small>
+                  </span>
+                </button>
+                {unread[conversation.id] ? (
+                  <button
+                    className="conversation-unread"
+                    title="Mark as read"
+                    aria-label={`Mark ${conversation.title ?? "conversation"} as read`}
+                    onClick={() => markConversationRead(conversation.id)}
+                  >
+                    <i />
+                  </button>
+                ) : (
+                  <span className="conversation-read" aria-hidden="true" />
+                )}
+              </div>
             ))
           )}
         </aside>
 
-        <section className="chat-window">
+        <section
+          className="chat-window"
+          onDragOver={(event) => event.preventDefault()}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {dragging && <div className="drop-hint">Drop files to attach them</div>}
           {selected ? (
             <>
               <div className="chat-window-heading">
@@ -368,7 +865,9 @@ export default function MessagesPage() {
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <span className="online-dot">● Live</span>
-                  <button className="chat-back" aria-label="Conversation members" onClick={() => setShowMembers((current) => !current)}>☰</button>
+                  <button className="chat-back" aria-label="Conversation members" onClick={() => setShowMembers((current) => !current)}>
+                    ☰
+                  </button>
                 </div>
               </div>
 
@@ -382,7 +881,9 @@ export default function MessagesPage() {
                         <p>{member.user_id === userId ? "You" : "Conversation member"}</p>
                       </div>
                       {selected.created_by === userId && member.user_id !== userId && (
-                        <button className="chat-back" onClick={() => removeMember(member.user_id)} aria-label="Remove member">×</button>
+                        <button className="chat-back" onClick={() => removeMember(member.user_id)} aria-label="Remove member">
+                          ×
+                        </button>
                       )}
                     </div>
                   ))}
@@ -394,9 +895,13 @@ export default function MessagesPage() {
                         defaultValue=""
                         style={{ flex: 1, padding: 8, background: "#0c0d23", color: "#fff", border: "1px solid #ffffff18", borderRadius: 6 }}
                       >
-                        <option value="" disabled>Add a team member...</option>
+                        <option value="" disabled>
+                          Add a team member...
+                        </option>
                         {addable.map((member) => (
-                          <option key={member.user_id} value={member.user_id}>{member.profiles?.full_name ?? member.user_id.slice(0, 8)}</option>
+                          <option key={member.user_id} value={member.user_id}>
+                            {member.profiles?.full_name ?? member.user_id.slice(0, 8)}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -404,98 +909,140 @@ export default function MessagesPage() {
                 </div>
               )}
 
-              <div className="message-list">
+              <div className="message-list" ref={listRef} onScroll={() => {
+                const list = listRef.current;
+                if (!list) return;
+                stickToBottom.current = list.scrollHeight - list.scrollTop - list.clientHeight < NEAR_BOTTOM_PX;
+                if (stickToBottom.current) setShowJump(false);
+              }}>
                 {messages.length < total && (
                   <button className="chat-back" onClick={loadOlder} disabled={loadingOlder} style={{ alignSelf: "center", marginBottom: 10 }}>
-                    {loadingOlder ? "Loading..." : `Load older (${total - messages.length} more)`}
+                    {loadingOlder ? "Loading..." : `Load older (${Math.max(0, total - messages.length)} more)`}
                   </button>
                 )}
                 {messages.length === 0 ? (
                   <p className="chat-empty">No messages yet. Start the conversation.</p>
                 ) : (
-                  messages.map((item) => {
+                  messages.map((item, index) => {
                     const mine = item.sender_id === userId;
+                    const previous = index === 0 ? undefined : messages[index - 1];
+                    const showDay = !previous || new Date(previous.created_at).toDateString() !== new Date(item.created_at).toDateString();
                     const grouped = new Map<string, string[]>();
                     for (const reaction of item.message_reactions ?? []) {
                       const bucket = grouped.get(reaction.emoji) ?? [];
                       bucket.push(reaction.user_id);
                       grouped.set(reaction.emoji, bucket);
                     }
+                    const images = (item.message_attachments ?? []).filter((file) => isImageType(file.content_type) && !brokenImages[file.id]);
+                    const docs = (item.message_attachments ?? []).filter((file) => !images.includes(file));
                     return (
-                      <div className={`message-bubble ${mine ? "mine" : ""}`} key={item.id}>
-                        {!mine && <small style={{ color: "#a7a5c5" }}>{item.profiles?.full_name ?? "Teammate"}</small>}
-                        {editingId === item.id ? (
-                          <form onSubmit={(event) => { event.preventDefault(); saveEdit(item.id); }} style={{ display: "flex", gap: 6 }}>
-                            <input value={editingBody} onChange={(event) => setEditingBody(event.target.value)} aria-label="Edit message" style={{ flex: 1 }} autoFocus />
-                            <button type="submit">Save</button>
-                            <button type="button" onClick={() => setEditingId(null)}>Cancel</button>
-                          </form>
-                        ) : (
-                          <p>
-                            {item.body}
-                            {item.edited_at && <em style={{ opacity: 0.6, fontStyle: "normal", fontSize: 8 }}> (edited)</em>}
-                          </p>
-                        )}
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                          <small>{new Date(item.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</small>
-                          {Array.from(grouped.entries()).map(([emoji, users]) => (
-                            <button
-                              key={emoji}
-                              onClick={() => toggleReaction(item.id, emoji)}
-                              style={{
-                                padding: "2px 6px",
-                                borderRadius: 10,
-                                border: users.includes(userId) ? "1px solid #9c69f5" : "1px solid #ffffff20",
-                                background: users.includes(userId) ? "#9c69f522" : "#ffffff0d",
-                                fontSize: 10,
-                                cursor: "pointer",
+                      <div className="message-row" key={item.id}>
+                        {showDay && <div className="day-divider">{dayLabel(item.created_at)}</div>}
+                        <div
+                          className={`message-bubble ${mine ? "mine" : ""} ${item.pending ? "pending" : ""} ${item.failed ? "failed" : ""}`}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            cancelLongPress();
+                            openMenuAt(event.clientX, event.clientY, item);
+                          }}
+                          onTouchStart={(event) => startLongPress(event, item)}
+                          onTouchEnd={cancelLongPress}
+                          onTouchMove={cancelLongPress}
+                          onTouchCancel={cancelLongPress}
+                        >
+                          {!mine && <small className="message-sender">{item.profiles?.full_name ?? "Teammate"}</small>}
+                          {editingId === item.id ? (
+                            <form
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                saveEdit(item.id);
                               }}
-                              aria-label={`React ${emoji}`}
+                              style={{ display: "flex", gap: 6 }}
                             >
-                              {emoji} {users.length}
-                            </button>
-                          ))}
-                          {mine && editingId !== item.id && (
-                            <>
-                              <button
-                                onClick={() => { setEditingId(item.id); setEditingBody(item.body); }}
-                                style={{ border: 0, background: "transparent", color: "#9a98b8", fontSize: 9, cursor: "pointer" }}
-                              >
-                                Edit
+                              <input
+                                value={editingBody}
+                                onChange={(event) => setEditingBody(event.target.value)}
+                                aria-label="Edit message"
+                                style={{ flex: 1 }}
+                                autoFocus
+                              />
+                              <button type="submit">Save</button>
+                              <button type="button" onClick={() => setEditingId(null)}>
+                                Cancel
                               </button>
-                              <button
-                                onClick={() => removeMessage(item.id)}
-                                style={{ border: 0, background: "transparent", color: "#ff9d8a", fontSize: 9, cursor: "pointer" }}
-                              >
-                                Delete
-                              </button>
-                            </>
+                            </form>
+                          ) : (
+                            <p>
+                              {item.body}
+                              {item.edited_at && <em className="message-edited"> (edited)</em>}
+                            </p>
                           )}
-                        </div>
-                        {(item.message_attachments ?? []).length > 0 && (
-                          <div style={{ display: "grid", gap: 5, marginTop: 6 }}>
-                            {item.message_attachments.map((file) => (
+                          {(images.length > 0 || docs.length > 0) && (
+                            <div className="chat-media">
+                              {images.map((file) => (
+                                <button
+                                  key={file.id}
+                                  className="chat-image"
+                                  title={file.file_name}
+                                  onClick={() => setViewer({ src: attachmentSrc(file), name: file.file_name })}
+                                >
+                                  <img
+                                    src={attachmentSrc(file)}
+                                    alt={file.file_name}
+                                    loading="lazy"
+                                    onError={() => setBrokenImages((current) => ({ ...current, [file.id]: true }))}
+                                  />
+                                </button>
+                              ))}
+                              {docs.map((file) => (
+                                <button
+                                  key={file.id}
+                                  className="chat-file-card"
+                                  onClick={() =>
+                                    file.blob_url ? window.open(file.blob_url, "_blank", "noopener,noreferrer") : openAttachment(file.id)
+                                  }
+                                >
+                                  <span className="chat-file-ext">{typeBadge(file.content_type, file.file_name)}</span>
+                                  <span className="chat-file-meta">
+                                    <strong>{file.file_name}</strong>
+                                    <small>{formatBytes(file.file_size)}</small>
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          <div className="message-foot">
+                            <small>
+                              {item.pending ? "Sending…" : item.failed ? "Not sent" : formatClock(item.created_at)}
+                            </small>
+                            {item.failed && (
+                              <button className="message-retry" onClick={() => retry(item.id)}>
+                                Retry
+                              </button>
+                            )}
+                            {Array.from(grouped.entries()).map(([emoji, users]) => (
                               <button
-                                key={file.id}
-                                onClick={() => openAttachment(file.id)}
-                                style={{ border: 0, background: "transparent", color: "#7ce5ea", fontSize: 9, cursor: "pointer", textAlign: "left", padding: 0 }}
+                                key={emoji}
+                                className={`reaction-chip ${users.includes(userId) ? "mine" : ""}`}
+                                onClick={() => toggleReaction(item.id, emoji)}
+                                aria-label={`React ${emoji}`}
                               >
-                                {file.file_name} · {formatBytes(file.file_size)}
+                                {emoji} {users.length}
                               </button>
                             ))}
+                            {!item.pending && !item.failed && (
+                              <button
+                                className="message-more"
+                                aria-label="Message actions"
+                                onClick={(event) => {
+                                  const rect = event.currentTarget.getBoundingClientRect();
+                                  openMenuAt(rect.left - 10, rect.bottom + 6, item);
+                                }}
+                              >
+                                ⋯
+                              </button>
+                            )}
                           </div>
-                        )}
-                        <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
-                          {QUICK_REACTIONS.map((emoji) => (
-                            <button
-                              key={emoji}
-                              onClick={() => toggleReaction(item.id, emoji)}
-                              style={{ border: 0, background: "transparent", fontSize: 11, cursor: "pointer", opacity: 0.7 }}
-                              aria-label={`Add ${emoji} reaction`}
-                            >
-                              {emoji}
-                            </button>
-                          ))}
                         </div>
                       </div>
                     );
@@ -504,22 +1051,71 @@ export default function MessagesPage() {
                 {typingNames.length > 0 && <p className="chat-empty">{typingNames.join(", ")} is typing…</p>}
               </div>
 
+              {showJump && (
+                <button className="jump-to-latest" onClick={() => {
+                  const list = listRef.current;
+                  if (list) list.scrollTop = list.scrollHeight;
+                  stickToBottom.current = true;
+                  setShowJump(false);
+                }}>
+                  Newest messages ↓
+                </button>
+              )}
+
+              {staged.length > 0 && (
+                <div className="composer-files">
+                  {staged.map((entry) => (
+                    <span className="composer-file" key={entry.key}>
+                      {entry.preview ? (
+                        <img src={entry.preview} alt="" />
+                      ) : (
+                        <span className="chat-file-ext">{typeBadge(entry.file.type, entry.file.name)}</span>
+                      )}
+                      <small>{entry.file.name}</small>
+                      <button onClick={() => removeStaged(entry.key)} aria-label={`Remove ${entry.file.name}`}>
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
               <form className="message-composer" onSubmit={send}>
-                <label className="chat-attach" title="Attach a file" aria-label="Attach a file">
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <label className="chat-attach" title="Attach files" aria-label="Attach files">
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
                     <path d="M21.44 11.05 12.25 20.24a5.5 5.5 0 0 1-7.78-7.78l8.49-8.49a3.5 3.5 0 0 1 4.95 4.95l-8.49 8.49a1.5 1.5 0 0 1-2.12-2.12l7.78-7.78" />
                   </svg>
-                  <input type="file" accept="application/pdf,text/plain,image/*,.zip,.docx" onChange={chooseAttachment} hidden />
+                  <input type="file" multiple accept={UPLOAD_ACCEPT} onChange={chooseFiles} hidden />
                 </label>
-                <input value={body} onChange={(event) => { setBody(event.target.value); announceTyping(); }} placeholder="Write a message..." aria-label="Message" />
-                <button disabled={!body.trim() && !attachment}>{attachment ? `Send ${attachment.name.slice(0, 12)}…` : "Send"}</button>
+                <textarea
+                  rows={1}
+                  value={body}
+                  onChange={(event) => {
+                    setBody(event.target.value);
+                    announceTyping();
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      submit();
+                    }
+                  }}
+                  onPaste={pasteFiles}
+                  placeholder="Write a message…  Enter to send, Shift+Enter for a new line"
+                  aria-label="Message"
+                />
+                <button disabled={!canSend}>Send</button>
               </form>
-              {attachment && (
-                <p className="chat-error" style={{ margin: 0 }}>
-                  Attached: {attachment.name} ({formatBytes(attachment.size)})
-                  <button onClick={() => setAttachment(null)} style={{ marginLeft: 10, border: 0, background: "transparent", color: "#ff9d8a", cursor: "pointer" }}>remove</button>
-                </p>
-              )}
             </>
           ) : (
             <div className="chat-empty chat-empty-large">
@@ -528,9 +1124,69 @@ export default function MessagesPage() {
               <p>Choose a conversation or start a new one.</p>
             </div>
           )}
-          {message && <p className="chat-error" role="status">{message}</p>}
+          {notice && <p className="chat-error" role="status">{notice}</p>}
         </section>
       </section>
+
+      {menuMessage && menu &&
+        createPortal(
+          <div className="message-menu" role="menu" style={{ left: menu.x, top: menu.y }}>
+            <button role="menuitem" onClick={() => copyText(menuMessage.body)}>
+              Copy text
+            </button>
+            <div className="message-menu-reactions" aria-label="Add a reaction">
+              {QUICK_REACTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  onClick={() => {
+                    toggleReaction(menuMessage.id, emoji);
+                    setMenu(null);
+                  }}
+                  aria-label={`Add ${emoji} reaction`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+            {menuMessage.sender_id === userId && (
+              <>
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setEditingId(menuMessage.id);
+                    setEditingBody(menuMessage.body);
+                    setMenu(null);
+                  }}
+                >
+                  Edit message
+                </button>
+                <button
+                  role="menuitem"
+                  className="danger"
+                  onClick={() => {
+                    setMenu(null);
+                    removeMessage(menuMessage.id);
+                  }}
+                >
+                  Delete message
+                </button>
+              </>
+            )}
+          </div>,
+          document.body,
+        )}
+
+      {viewer &&
+        createPortal(
+          <div className="image-viewer" role="dialog" aria-label={viewer.name} onClick={() => setViewer(null)}>
+            <img src={viewer.src} alt={viewer.name} onClick={(event) => event.stopPropagation()} />
+            <div className="image-viewer-bar" onClick={(event) => event.stopPropagation()}>
+              <span>{viewer.name}</span>
+              <button onClick={() => setViewer(null)}>Close</button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </WorkspaceShell>
   );
 }

@@ -1,11 +1,13 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { WorkspaceShell } from "@/components/WorkspaceShell";
+import { DateField } from "@/components/DateTimeField";
+import { RoadmapPanel, RoadmapPlanner, type ReviewedPhase } from "@/components/Roadmap";
 import { useWorkspace, WorkspaceTeam } from "@/lib/useWorkspace";
-import { invitationDeliveryMessage } from "@/lib/format";
+import { invitationDeliveryMessage, formatShortDate } from "@/lib/format";
 
 type Invitation = { id: string; invitee_email: string; role: string; status: string; expires_at: string };
 
@@ -24,7 +26,17 @@ function ProjectsScreen() {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showRoadmap, setShowRoadmap] = useState(false);
+  const [roadmapDraft, setRoadmapDraft] = useState<ReviewedPhase[]>([]);
+  const createFormRef = useRef<HTMLFormElement>(null);
   const pageSize = 6;
+
+  const acceptDraft = useCallback((phases: ReviewedPhase[]) => setRoadmapDraft(phases), []);
+
+  const readBrief = useCallback(() => {
+    const value = (name: string) => (createFormRef.current?.elements.namedItem(name) as HTMLInputElement | null)?.value ?? "";
+    return { projectName: value("name"), description: value("description") };
+  }, []);
 
   const filtered = useMemo(() => {
     return teams.filter((candidate) => {
@@ -67,9 +79,32 @@ function ProjectsScreen() {
         team_target_date: String(form.get("targetDate") ?? "") || null,
       });
       if (rpcError) throw rpcError;
-      if (data) {
-        setMessage("Project created. Your owner membership is active.");
+      const created = data as { id?: string } | null;
+      if (created?.id) {
+        let saved = "Project created. Your owner membership is active.";
+        if (showRoadmap && roadmapDraft.length > 0) {
+          const roadmap = await fetch("/api/roadmap", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              teamId: created.id,
+              phases: roadmapDraft.map((phase) => ({
+                title: phase.title,
+                summary: phase.summary,
+                source: phase.source,
+                tasks: phase.tasks.map((title) => ({ title })),
+              })),
+            }),
+          });
+          const result = await roadmap.json().catch(() => ({}));
+          saved = roadmap.ok
+            ? `Project created with its ${roadmapDraft.length}-phase roadmap and ${roadmapDraft.reduce((sum, phase) => sum + phase.tasks.length, 0)} tasks.`
+            : `Project created, but the roadmap was not saved: ${result.error ?? "try adding it in project settings."}`;
+        }
+        setMessage(saved);
         setShowCreate(false);
+        setShowRoadmap(false);
+        setRoadmapDraft([]);
         await refresh();
       }
     } catch (err) {
@@ -205,7 +240,7 @@ function ProjectsScreen() {
               <div className="row-meta">
                 {item.memberCount} member{item.memberCount === 1 ? "" : "s"}
                 <br />
-                {item.target_date ? `Target ${item.target_date}` : "No target date"}
+                {item.target_date ? `Target ${formatShortDate(item.target_date)}` : "No target date"}
               </div>
               <div className="row-actions">
                 <button onClick={() => { setTeamId(item.id); router.push(`/timeline?teamId=${item.id}`); }}>Timeline</button>
@@ -238,11 +273,16 @@ function ProjectsScreen() {
             <p className="overline">NEW PROJECT</p>
             <h2 id="create-project-title">Create a project</h2>
             <p className="modal-copy">Start a private project space, then invite your supervisor and teammates.</p>
-            <form onSubmit={createProject}>
+            <form onSubmit={createProject} ref={createFormRef}>
               <label>Project name<input name="name" required minLength={2} maxLength={120} placeholder="e.g. Nova thesis" autoFocus /></label>
               <label>Description<textarea name="description" rows={3} placeholder="What is the team building?" /></label>
               <label>Category<input name="category" placeholder="e.g. engineering" /></label>
-              <label>Target date<input name="targetDate" type="date" /></label>
+              <label>Target date<DateField name="targetDate" emptyText="Optional" /></label>
+              <label className="roadmap-toggle">
+                <input type="checkbox" checked={showRoadmap} onChange={(event) => setShowRoadmap(event.target.checked)} />
+                <span>Add a roadmap now</span>
+              </label>
+              {showRoadmap && <RoadmapPlanner readBrief={readBrief} onChange={acceptDraft} />}
               <div className="modal-actions">
                 <button type="button" className="cancel-button" onClick={() => setShowCreate(false)}>Cancel</button>
                 <button className="new-project" disabled={busy}>{busy ? "Creating..." : "Create project"}</button>
@@ -265,13 +305,14 @@ function ProjectsScreen() {
               <label>Category<input name="category" defaultValue={settingsFor.category ?? ""} /></label>
               <label>University<input name="university" defaultValue={settingsFor.university ?? ""} /></label>
               <label>Department<input name="department" defaultValue={settingsFor.department ?? ""} /></label>
-              <label>Start date<input name="startDate" type="date" defaultValue={settingsFor.start_date ?? ""} /></label>
-              <label>Target date<input name="targetDate" type="date" defaultValue={settingsFor.target_date ?? ""} /></label>
+              <label>Start date<DateField key={`start-${settingsFor.id}`} name="startDate" defaultValue={settingsFor.start_date ?? ""} emptyText="Not set" /></label>
+              <label>Target date<DateField key={`target-${settingsFor.id}`} name="targetDate" defaultValue={settingsFor.target_date ?? ""} emptyText="Not set" /></label>
               <div className="modal-actions">
                 <button type="button" className="cancel-button" onClick={() => setSettingsFor(null)}>Close</button>
                 <button className="new-project" disabled={busy}>{busy ? "Saving..." : "Save settings"}</button>
               </div>
             </form>
+            <RoadmapPanel teamId={settingsFor.id} onChanged={refresh} />
             <div className="danger-zone">
               <div>
                 <strong>Delete this project</strong>

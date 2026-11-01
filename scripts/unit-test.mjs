@@ -3,7 +3,19 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
 
-const { configuredSenderDomain, isEmailConfigured, sendInvitationEmail, sendMeetingEmail } = await import("../src/lib/email.ts");
+const { configuredSenderDomain, emailKeyLooksValid, isEmailConfigured, sendInvitationEmail, sendMeetingEmail } = await import("../src/lib/email.ts");
+const { formatShortDate, invitationDeliveryMessage, toDateTimeInput } = await import("../src/lib/format.ts");
+const {
+  addDaysToField,
+  describeFieldValue,
+  durationMinutes,
+  fieldToIso,
+  formatDuration,
+  formatFieldValue,
+  parseFieldValue,
+  shiftEndForDuration,
+  startOfNextSlot,
+} = await import("../src/lib/datetime-fields.ts");
 
 const uuidSchema = z.string().uuid();
 function parseUuid(value) {
@@ -171,6 +183,18 @@ test("isEmailConfigured: false when the key or sender is missing", async () => {
   });
 });
 
+test("emailKeyLooksValid: only Resend-shaped keys are worth probing", async () => {
+  await withEmailEnv({ RESEND_API_KEY: "integration-suite-sandbox-key" }, { status: 200 }, () => {
+    assert.equal(emailKeyLooksValid(), false);
+  });
+  await withEmailEnv({ RESEND_API_KEY: `re_${"a".repeat(36)}` }, { status: 200 }, () => {
+    assert.equal(emailKeyLooksValid(), true);
+  });
+  await withEmailEnv({ RESEND_API_KEY: "" }, { status: 200 }, () => {
+    assert.equal(emailKeyLooksValid(), false);
+  });
+});
+
 test("sendInvitationEmail: reports configuration instead of failing silently", async () => {
   const { result, requests } = await withEmailEnv({}, { status: 200 }, async (all) => ({
     result: await sendInvitationEmail({ to: "dev@umt.edu.pk", teamName: "Grad Project", inviteUrl: "https://collabryy.tech/invite/t", role: "member" }),
@@ -281,5 +305,108 @@ test("sendMeetingEmail: professional copy per action, with escaping and time zon
   // Details appear once in the plain-text version.
   assert.equal(scheduled.text.split("Date: Friday, 6 November 2026").length - 1, 1);
 });
+
+test("invitationDeliveryMessage: names the real reason instead of blaming the recipient", () => {
+  const link = "https://collabryy.tech/invite/abc";
+  assert.match(
+    invitationDeliveryMessage("dev@umt.edu.pk", { emailSent: true, inviteUrl: link }),
+    /^Invitation emailed to dev@umt\.edu\.pk\./,
+  );
+  // A deployment with no sender must never be reported as the recipient opting out.
+  const unconfigured = invitationDeliveryMessage("dev@umt.edu.pk", {
+    emailSent: false,
+    emailCause: "not-configured",
+    emailReason: "Email is not configured on this server.",
+    inviteUrl: link,
+  });
+  assert.match(unconfigured, /no email sender configured/);
+  assert.match(unconfigured, /Email is not configured on this server\./);
+  assert.doesNotMatch(unconfigured, /turns off invitation emails/);
+  assert.match(invitationDeliveryMessage("dev@umt.edu.pk", { emailSent: false, emailCause: "opted-out", inviteUrl: link }), /that account turns off invitation emails/);
+  assert.match(
+    invitationDeliveryMessage("dev@umt.edu.pk", { emailSent: false, emailCause: "provider", emailReason: "Resend rejected the API key.", inviteUrl: link }),
+    /the email was not delivered\. Resend rejected the API key\./,
+  );
+  // Every failure keeps the shareable link.
+  for (const cause of ["not-configured", "opted-out", "provider"]) {
+    assert.ok(
+      invitationDeliveryMessage("dev@umt.edu.pk", { emailSent: false, emailCause: cause, inviteUrl: link }).includes(link),
+      `the ${cause} message must still offer the invite link`,
+    );
+  }
+});
+
+test("parseFieldValue: reads wall-clock values in the local zone", () => {
+  const both = parseFieldValue("2026-11-06T15:30", "datetime");
+  assert.equal(both.getHours(), 15);
+  assert.equal(both.getMinutes(), 30);
+  // A date-only value must stay on the 6th, not slide a day in a negative-offset zone.
+  const dayOnly = parseFieldValue("2026-11-06", "date");
+  assert.equal(dayOnly.getDate(), 6);
+  assert.equal(dayOnly.getMonth(), 10);
+  assert.equal(dayOnly.getHours(), 0);
+  assert.equal(parseFieldValue("", "datetime"), null);
+  assert.equal(parseFieldValue("2026-13-45", "date"), null);
+  assert.equal(parseFieldValue("tomorrow", "datetime"), null);
+});
+
+test("formatFieldValue and fieldToIso: round-trip without a zone shift", () => {
+  assert.equal(formatFieldValue(new Date(2026, 10, 6, 9, 5), "datetime"), "2026-11-06T09:05");
+  assert.equal(formatFieldValue(new Date(2026, 10, 6, 9, 5), "date"), "2026-11-06");
+  const iso = fieldToIso("2026-11-06T15:30");
+  assert.match(iso, /^2\d{3}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}(Z|[+-]\d{2}:\d{2})$/);
+  assert.equal(formatFieldValue(new Date(iso), "datetime"), "2026-11-06T15:30");
+  assert.equal(fieldToIso(""), null);
+});
+
+test("describeFieldValue: one deterministic label for trigger and email copy", () => {
+  assert.equal(describeFieldValue("2026-11-06T15:00", "datetime"), "Fri, 6 Nov 2026 · 3:00 pm");
+  assert.equal(describeFieldValue("2026-11-06T00:15", "datetime"), "Fri, 6 Nov 2026 · 12:15 am");
+  assert.equal(describeFieldValue("2026-11-06T12:00", "datetime"), "Fri, 6 Nov 2026 · 12:00 pm");
+  assert.equal(describeFieldValue("2026-11-06", "date"), "Fri, 6 Nov 2026");
+  assert.equal(describeFieldValue("", "datetime"), "Pick a date and time");
+  assert.equal(describeFieldValue("", "date", "Optional"), "Optional");
+});
+
+test("startOfNextSlot: never a past or odd-minute start", () => {
+  assert.equal(startOfNextSlot(30, new Date(2026, 10, 6, 9, 17)), "2026-11-06T09:30");
+  assert.equal(startOfNextSlot(30, new Date(2026, 10, 6, 9, 31)), "2026-11-06T10:00");
+  assert.equal(startOfNextSlot(30, new Date(2026, 10, 6, 9, 0)), "2026-11-06T09:00");
+});
+
+test("durationMinutes and formatDuration: the length shown next to the chips", () => {
+  assert.equal(durationMinutes("2026-11-06T09:00", "2026-11-06T10:30"), 90);
+  assert.equal(durationMinutes("2026-11-06T10:00", "2026-11-06T10:00"), null);
+  assert.equal(durationMinutes("2026-11-06T11:00", "2026-11-06T09:00"), null);
+  assert.equal(durationMinutes("", "2026-11-06T09:00"), null);
+  assert.equal(formatDuration(90), "1 h 30 min");
+  assert.equal(formatDuration(60), "1 h");
+  assert.equal(formatDuration(30), "30 min");
+  assert.equal(formatDuration(null), "");
+});
+
+test("shiftEndForDuration: moving the start keeps the meeting the same length", () => {
+  assert.equal(shiftEndForDuration("2026-11-06T14:00", "2026-11-06T10:30", "2026-11-06T09:00"), "2026-11-06T15:30");
+  // No usable previous duration (cleared or inverted end) falls back to one hour.
+  assert.equal(shiftEndForDuration("2026-11-06T14:00", "", "2026-11-06T09:00"), "2026-11-06T15:00");
+  assert.equal(shiftEndForDuration("2026-11-06T14:00", "2026-11-06T08:00", "2026-11-06T09:00"), "2026-11-06T15:00");
+  // Crossing midnight keeps the 90-minute length and still yields a valid value.
+  assert.equal(shiftEndForDuration("2026-11-06T23:30", "2026-11-07T00:30", "2026-11-06T23:00"), "2026-11-07T01:00");
+});
+
+test("addDaysToField: today / tomorrow / next week keep the chosen time", () => {
+  assert.equal(addDaysToField("2026-11-06T15:30", 1, "datetime"), "2026-11-07T15:30");
+  assert.equal(addDaysToField("2026-01-31", 1, "date"), "2026-02-01");
+  assert.equal(addDaysToField("2026-11-06T23:30", 7, "datetime"), "2026-11-13T23:30");
+});
+
+test("formatShortDate and toDateTimeInput: stored values reach the field without a zone shift", () => {
+  assert.equal(formatShortDate("2026-11-06"), "6 Nov 2026");
+  assert.equal(formatShortDate(""), "");
+  const iso = "2026-11-06T15:00:00.000Z";
+  const local = toDateTimeInput(iso);
+  assert.equal(parseFieldValue(local, "datetime").getTime(), new Date(iso).getTime());
+});
+
 
 

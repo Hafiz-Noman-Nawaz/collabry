@@ -117,7 +117,7 @@ export async function sendInvitationEmailWithPreference(input: {
         .select("email_invitations")
         .eq("user_id", input.userId)
         .maybeSingle();
-      if (data && data.email_invitations === false) return { sent: false, skipped: true };
+      if (data && data.email_invitations === false) return { sent: false, skipped: true, cause: "opted-out" };
     }
   } catch {
     // Preference lookup failure must not block delivery.
@@ -233,6 +233,7 @@ export async function sendMeetingEmails(input: {
     }
   }
   if (summary.failed > 0) console.error("[email] meeting delivery failed:", summary.reason);
+  else console.info(`[email] meeting ${input.action}: ${summary.sent} sent, ${summary.skipped} skipped`);
   return summary;
 }
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit, requestOrigin, tooManyRequests } from "@/lib/rate-limit";
-import { configuredSenderDomain, isEmailConfigured } from "@/lib/email";
+import { configuredSenderDomain, emailKeyLooksValid, isEmailConfigured } from "@/lib/email";
 
 type EmailProbe = { provider: string; sender: string };
 
@@ -12,6 +12,8 @@ type EmailProbe = { provider: string; sender: string };
  */
 async function probeEmail(): Promise<EmailProbe> {
   if (!isEmailConfigured()) return { provider: "unconfigured", sender: "unconfigured" };
+  // A key that cannot be a Resend key is reported without a network round trip.
+  if (!emailKeyLooksValid()) return { provider: "invalid", sender: "unknown" };
   const senderDomain = configuredSenderDomain();
   try {
     const response = await fetch("https://api.resend.com/domains", {

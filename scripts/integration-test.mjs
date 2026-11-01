@@ -308,8 +308,8 @@ async function main() {
     if (emailDisabledForRun) {
       check(
         "an undeliverable invitation says so instead of claiming delivery",
-        inviteBody.emailSent === false && /rejected the API key/i.test(inviteBody.emailReason ?? ""),
-        JSON.stringify({ emailSent: inviteBody.emailSent, emailReason: inviteBody.emailReason }),
+        inviteBody.emailSent === false && inviteBody.emailCause === "provider" && /rejected the API key/i.test(inviteBody.emailReason ?? ""),
+        JSON.stringify({ emailSent: inviteBody.emailSent, emailCause: inviteBody.emailCause, emailReason: inviteBody.emailReason }),
       );
     }
 

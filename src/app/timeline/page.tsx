@@ -3,6 +3,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { WorkspaceShell } from "@/components/WorkspaceShell";
+import { DateTimeField, DurationChips } from "@/components/DateTimeField";
+import { addMinutesToField, durationMinutes, shiftEndForDuration, startOfNextSlot } from "@/lib/datetime-fields";
 import { useWorkspace } from "@/lib/useWorkspace";
 
 type TimelineItem = {
@@ -26,6 +28,8 @@ export default function TimelinePage() {
   const [message, setMessage] = useState("");
   const [members, setMembers] = useState<Member[]>([]);
   const [showMeetingForm, setShowMeetingForm] = useState(false);
+  const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
   const [showAnnouncementForm, setShowAnnouncementForm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [rsvpState, setRsvpState] = useState<Record<string, string>>({});
@@ -120,6 +124,11 @@ export default function TimelinePage() {
   async function scheduleMeeting(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!teamId) return;
+    const meetingLength = durationMinutes(startsAt, endsAt);
+    if (!meetingLength) {
+      setMessage("The meeting must end after it starts.");
+      return;
+    }
     setBusy(true);
     setMessage("");
     const form = event.currentTarget;
@@ -133,8 +142,8 @@ export default function TimelinePage() {
           teamId,
           title: String(data.get("title") ?? ""),
           agenda: String(data.get("agenda") ?? ""),
-          startsAt: new Date(String(data.get("startsAt"))).toISOString(),
-          endsAt: new Date(String(data.get("endsAt"))).toISOString(),
+          startsAt: new Date(startsAt).toISOString(),
+          endsAt: new Date(endsAt).toISOString(),
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           meetingUrl: String(data.get("meetingUrl") ?? ""),
           attendeeIds,
@@ -176,6 +185,9 @@ export default function TimelinePage() {
           <button
             className="new-project"
             onClick={() => {
+              const nextStart = startOfNextSlot();
+              setStartsAt(nextStart);
+              setEndsAt(addMinutesToField(nextStart, 60));
               setShowMeetingForm((c) => !c);
               setShowAnnouncementForm(false);
               setMessage("");
@@ -223,8 +235,21 @@ export default function TimelinePage() {
             <label>Title<input name="title" required maxLength={200} placeholder="e.g. Supervisor check-in" /></label>
             <label>Agenda<textarea name="agenda" rows={3} placeholder="What should the team prepare?" /></label>
             <div className="form-grid two">
-              <label>Starts<input name="startsAt" type="datetime-local" required /></label>
-              <label>Ends<input name="endsAt" type="datetime-local" required /></label>
+              <label>
+                Starts
+                <DateTimeField
+                  value={startsAt}
+                  onChange={(next) => {
+                    setStartsAt(next);
+                    setEndsAt((current) => shiftEndForDuration(next, current, startsAt));
+                  }}
+                />
+              </label>
+              <label>
+                Ends
+                <DateTimeField value={endsAt} onChange={setEndsAt} clearable={false} />
+                <DurationChips start={startsAt} end={endsAt} onEnd={setEndsAt} />
+              </label>
             </div>
             <div className="form-grid two">
               <label>Meeting link (optional)<input name="meetingUrl" type="url" placeholder="https://meet.example.com/room" /></label>
@@ -239,7 +264,7 @@ export default function TimelinePage() {
             </div>
             <div className="form-actions">
               <button type="button" className="ghost" onClick={() => setShowMeetingForm(false)}>Cancel</button>
-              <button className="primary" disabled={busy}>{busy ? "Scheduling..." : "Schedule meeting"}</button>
+              <button className="primary" disabled={busy || !durationMinutes(startsAt, endsAt)}>{busy ? "Scheduling..." : "Schedule meeting"}</button>
             </div>
           </form>
         </section>

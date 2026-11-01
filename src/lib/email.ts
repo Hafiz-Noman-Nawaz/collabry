@@ -1,4 +1,10 @@
-export type EmailOutcome = { sent: boolean; skipped: boolean; reason?: string };
+export type EmailOutcome = {
+  sent: boolean;
+  skipped: boolean;
+  reason?: string;
+  /** Why nothing was handed to the provider, so the UI never blames the recipient for a server gap. */
+  cause?: "opted-out" | "not-configured" | "provider";
+};
 
 export type MeetingEmailAction = "scheduled" | "updated" | "cancelled" | "added" | "reminder";
 
@@ -160,6 +166,11 @@ export function isEmailConfigured() {
   return Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
 }
 
+/** Resend keys are issued as `re_` plus a long random suffix, so anything else never reaches the API. */
+export function emailKeyLooksValid() {
+  return /^re_[a-z0-9_-]{16,}$/i.test(process.env.RESEND_API_KEY?.trim() ?? "");
+}
+
 /** Returns the domain part of RESEND_FROM_EMAIL so health checks can prove it is verified. */
 export function configuredSenderDomain() {
   const from = process.env.RESEND_FROM_EMAIL?.trim() ?? "";
@@ -170,7 +181,12 @@ async function deliver(input: { to: string; subject: string; html: string; text:
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const from = process.env.RESEND_FROM_EMAIL?.trim();
   if (!apiKey || !from) {
-    return { sent: false, skipped: true, reason: "Email is not configured on this server. Set RESEND_API_KEY and RESEND_FROM_EMAIL." };
+    return {
+      sent: false,
+      skipped: true,
+      cause: "not-configured",
+      reason: "Email is not configured on this server. Set RESEND_API_KEY and RESEND_FROM_EMAIL to an address on your verified Resend domain, then redeploy.",
+    };
   }
   try {
     const response = await fetch("https://api.resend.com/emails", {
@@ -188,13 +204,14 @@ async function deliver(input: { to: string; subject: string; html: string; text:
     if (!response.ok) {
       const detail = (await response.json().catch(() => null)) as { message?: unknown } | null;
       const providerMessage = typeof detail?.message === "string" && detail.message.trim() ? detail.message.trim() : `The email provider responded with HTTP ${response.status}.`;
-      return { sent: false, skipped: false, reason: providerReason(response.status, providerMessage) };
+      return { sent: false, skipped: false, cause: "provider", reason: providerReason(response.status, providerMessage) };
     }
     return { sent: true, skipped: false };
   } catch (error) {
     return {
       sent: false,
       skipped: false,
+      cause: "provider",
       reason: `The email provider could not be reached (${error instanceof Error ? error.message : "network error"}).`,
     };
   }

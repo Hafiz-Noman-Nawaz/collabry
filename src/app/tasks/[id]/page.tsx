@@ -4,6 +4,7 @@ import { FormEvent, Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
 import { WorkspaceShell } from "@/components/WorkspaceShell";
+import { DatePresets, DateTimeField } from "@/components/DateTimeField";
 import { createClient } from "@/lib/supabase/browser";
 import { formatBytes, titleCase, toDateTimeInput } from "@/lib/format";
 
@@ -328,7 +329,8 @@ function TaskScreen() {
             </label>
             <label>
               Due date
-              <input type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
+              <DateTimeField value={dueAt} onChange={setDueAt} emptyText="No due date" />
+              <DatePresets value={dueAt} onChange={setDueAt} label="Quick due dates" />
             </label>
             <label>
               Assignees

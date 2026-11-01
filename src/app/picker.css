@@ -1,0 +1,71 @@
+/* Shared date + time picker: trigger, portal panel, calendar grid, clock dial. */
+.dtf { position: relative; display: grid; }
+.dtf-trigger { display: flex; width: 100%; align-items: center; gap: 9px; padding: 11px 12px; border: 1px solid #ffffff18; border-radius: 6px; color: #fff; background: #0c0d23aa; font-size: 12px; text-align: left; cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease; }
+.dtf-trigger:hover { border-color: #ffffff2e; }
+.dtf-trigger.dtf-open, .dtf-trigger:focus { border-color: #9c69f5; box-shadow: 0 0 0 3px #9c69f51f; }
+.dtf-trigger svg { width: 15px; height: 15px; flex: 0 0 auto; fill: none; stroke: #a48de0; stroke-width: 1.6; stroke-linecap: round; }
+.dtf-trigger span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dtf-trigger .dtf-placeholder { color: #7c7a9c; }
+.dtf-trigger em { color: #7d7ba0; font-size: 10px; font-style: normal; }
+.dtf-trigger:disabled { opacity: .5; cursor: not-allowed; }
+
+.dtf-panel { position: fixed; z-index: 90; display: grid; gap: 12px; padding: 14px; overflow-y: auto; border: 1px solid #ffffff22; border-radius: 14px; background: linear-gradient(150deg, #2b2456, #14152e); box-shadow: 0 26px 70px #000000a8; color: #ecebff; font-size: 12px; scrollbar-width: thin; scrollbar-color: #6d55c2 #ffffff08; }
+.dtf-panel::before { position: absolute; inset: -1px; border-radius: inherit; box-shadow: inset 0 1px #ffffff14; content: ""; pointer-events: none; }
+.dtf-month { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; color: #f2f1ff; font-size: 13px; font-weight: 650; }
+.dtf-nav { width: 28px; height: 28px; padding: 0; border: 1px solid #ffffff16; border-radius: 7px; color: #c6c3e8; background: #ffffff0a; font-size: 15px; line-height: 1; cursor: pointer; }
+.dtf-nav:hover { color: #fff; background: #ffffff16; }
+.dtf-weekdays, .dtf-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.dtf-weekdays { margin-bottom: 4px; }
+.dtf-weekdays span { padding: 4px 0; color: #8d8bb0; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-align: center; text-transform: uppercase; }
+.dtf-day { position: relative; height: 34px; padding: 0; border: 0; border-radius: 8px; color: #dedcf7; background: transparent; font-size: 12px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.dtf-day:hover { background: #ffffff14; }
+.dtf-day.dtf-outside { color: #5f5d80; }
+.dtf-day.dtf-today::after { position: absolute; right: 7px; bottom: 4px; width: 4px; height: 4px; border-radius: 50%; background: #31d9ed; content: ""; }
+.dtf-day.dtf-selected { color: #fff; background: linear-gradient(140deg, #a874fc, #6d4ae0); font-weight: 700; box-shadow: 0 6px 16px #7c53d84d; }
+.dtf-day.dtf-selected.dtf-today::after { background: #eae6ff; }
+.dtf-shortcuts { display: flex; gap: 6px; }
+.dtf-shortcuts.dtf-inline { margin-top: 7px; }
+.dtf-inline button { flex: 1; }
+.dtf-shortcuts button { flex: 1; padding: 7px 4px; border: 1px solid #ffffff14; border-radius: 7px; color: #b9b6dd; background: #ffffff08; font-size: 10px; cursor: pointer; }
+.dtf-shortcuts button:hover { color: #fff; border-color: #9c69f5; background: #8b62d930; }
+
+.dtf-clock { display: grid; gap: 10px; padding-top: 11px; border-top: 1px solid #ffffff12; }
+.dtf-clock-tabs { display: flex; gap: 4px; padding: 3px; border-radius: 9px; background: #ffffff09; width: max-content; }
+.dtf-clock-tabs button { padding: 5px 11px; border: 0; border-radius: 6px; color: #8c8ab0; background: transparent; font-size: 10px; letter-spacing: .06em; cursor: pointer; text-transform: uppercase; }
+.dtf-tab-active { color: #a77cff !important; background: #8b62d926 !important; }
+.dtf-clock-body { display: flex; align-items: center; gap: 14px; }
+.dtf-dial { position: relative; flex: 0 0 auto; touch-action: none; border-radius: 50%; background: radial-gradient(circle at 50% 42%, #ffffff10, #ffffff05); }
+.dtf-dial svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.dtf-dial-ring { fill: none; stroke: #ffffff1c; stroke-width: 1; }
+.dtf-dial-hand { stroke: #9c69f5; stroke-width: 1.6; stroke-linecap: round; }
+.dtf-dial-knob { fill: #a874fc; }
+.dtf-dial-label { position: absolute; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; color: #c3c0e6; background: transparent; font-size: 10px; font-variant-numeric: tabular-nums; cursor: pointer; transition: .12s ease; }
+.dtf-dial-label:hover { background: #ffffff17; color: #fff; }
+.dtf-dial-label.dtf-dial-active { color: #fff; background: linear-gradient(140deg, #a874fc, #6d4ae0); font-weight: 700; box-shadow: 0 5px 14px #7c53d859; }
+.dtf-readout { display: flex; min-width: 0; flex: 1; flex-wrap: wrap; align-items: center; justify-content: center; gap: 7px 8px; }
+.dtf-unit { display: grid; justify-items: center; gap: 1px; }
+.dtf-unit strong { color: #fff; font-size: 21px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.dtf-unit button { padding: 0 12px; border: 0; color: #8f8cb4; background: transparent; font-size: 8px; line-height: 1.4; cursor: pointer; }
+.dtf-unit button:hover { color: #c9b8ff; }
+.dtf-colon { color: #7d7ba2; font-size: 17px; }
+.dtf-period { display: flex; gap: 4px; width: 100%; justify-content: center; }
+.dtf-period button { padding: 4px 11px; border: 1px solid #ffffff14; border-radius: 6px; color: #9d9ac2; background: #ffffff08; font-size: 10px; cursor: pointer; }
+.dtf-link { padding: 3px 6px; border: 0; color: #6fd8e6; background: transparent; font-size: 10px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.dtf-footer { display: flex; align-items: center; justify-content: space-between; padding-top: 3px; border-top: 1px solid #ffffff12; }
+.dtf-primary { padding: 8px 16px; border: 0; border-radius: 7px; color: #fff; background: linear-gradient(110deg, #a874fc, #7953db); font-size: 11px; font-weight: 600; cursor: pointer; box-shadow: 0 8px 20px #8e61eb3d; }
+.dtf-primary:hover { filter: brightness(1.07); }
+
+.dtf-duration { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 9px; color: #8d8bb0; font-size: 10px; }
+.dtf-duration-label { color: #a77cff; font-weight: 600; letter-spacing: .04em; }
+.dtf-duration-chips { display: flex; gap: 5px; }
+.dtf-duration-chips button { padding: 5px 9px; border: 1px solid #ffffff14; border-radius: 999px; color: #a8a5cc; background: #ffffff08; font-size: 10px; cursor: pointer; }
+.dtf-duration-chips button:hover:not(:disabled) { color: #fff; border-color: #9c69f5; }
+.dtf-duration-chips button:disabled { opacity: .4; cursor: not-allowed; }
+
+@media (max-width: 700px) {
+  .dtf-panel { right: 0; bottom: 0; left: 0; width: 100%; max-height: min(74dvh, 620px); padding: 16px 16px calc(14px + env(safe-area-inset-bottom)); border-right: 0; border-bottom: 0; border-left: 0; border-radius: 18px 18px 0 0; animation: dtf-rise .18s ease-out; }
+  .dtf-day { height: 40px; }
+  .dtf-footer { position: sticky; bottom: 0; margin: 0 -16px calc(-14px - env(safe-area-inset-bottom)); padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: #14152e; }
+  @keyframes dtf-rise { from { transform: translateY(14px); opacity: .4; } }
+}
+@media (prefers-reduced-motion: reduce) { .dtf-panel { animation: none; } }

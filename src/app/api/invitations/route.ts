@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { sendInvitationEmailWithPreference } from "@/lib/notify";
+import type { EmailOutcome } from "@/lib/email";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit, tooManyRequests } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
   const origin = getPublicAppUrl(request);
   const inviteUrl = `${origin}/invite/${token}`;
   let emailSent = false;
-  let emailSkipped = false;
+  let emailCause: EmailOutcome["cause"];
   let emailReason: string | undefined;
   try {
     // Honours the recipient's stored email_invitations preference when known.
@@ -89,13 +90,15 @@ export async function POST(request: Request) {
       inviterEmail: authData.user.email ?? null,
     });
     emailSent = outcome.sent;
-    emailSkipped = outcome.skipped;
+    emailCause = outcome.cause;
     emailReason = outcome.reason;
-    if (!outcome.sent && !outcome.skipped) console.error("[email] invitation delivery failed:", outcome.reason);
+    if (!outcome.sent && emailCause === "provider") console.error("[email] invitation delivery failed:", outcome.reason);
+    if (!outcome.sent && emailCause === "not-configured") console.error("[email] invitation email not configured on this deployment");
   } catch (error) {
     emailSent = false;
+    emailCause = "provider";
     emailReason = error instanceof Error ? error.message : "The email provider did not accept the message.";
     console.error("[email] invitation delivery failed:", emailReason);
   }
-  return NextResponse.json({ invitation: data, inviteUrl, emailSent, emailSkipped, emailReason }, { status: 201 });
+  return NextResponse.json({ invitation: data, inviteUrl, emailSent, emailCause, emailReason }, { status: 201 });
 }

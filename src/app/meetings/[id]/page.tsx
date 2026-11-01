@@ -3,6 +3,8 @@
 import { FormEvent, Suspense, useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { WorkspaceShell } from "@/components/WorkspaceShell";
+import { DateTimeField, DurationChips } from "@/components/DateTimeField";
+import { durationMinutes, shiftEndForDuration } from "@/lib/datetime-fields";
 import { createClient } from "@/lib/supabase/browser";
 import { titleCase, toDateTimeInput } from "@/lib/format";
 
@@ -159,6 +161,10 @@ function MeetingScreen() {
 
   async function saveDetails(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (startsAt && endsAt && !durationMinutes(startsAt, endsAt)) {
+      setMessage("The meeting must end after it starts.");
+      return;
+    }
     const result = await request(`/api/meetings/${meetingId}`, {
       method: "PATCH",
       body: JSON.stringify({
@@ -316,11 +322,20 @@ function MeetingScreen() {
             <div className="form-grid two">
               <label>
                 Starts
-                <input type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} required />
+                <DateTimeField
+                  value={startsAt}
+                  onChange={(next) => {
+                    const previousStart = startsAt;
+                    setStartsAt(next);
+                    setEndsAt((current) => shiftEndForDuration(next, current, previousStart));
+                  }}
+                  emptyText="Pick when it starts"
+                />
               </label>
               <label>
                 Ends
-                <input type="datetime-local" value={endsAt} onChange={(event) => setEndsAt(event.target.value)} />
+                <DateTimeField value={endsAt} onChange={setEndsAt} emptyText="Pick when it ends" />
+                <DurationChips start={startsAt} end={endsAt} onEnd={setEndsAt} />
               </label>
               <label>
                 Time zone
