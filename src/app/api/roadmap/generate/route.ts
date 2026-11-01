@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getSessionUser } from "@/lib/authz";
 import { badRequest, unauthorized } from "@/lib/api";
 import { rateLimit, tooManyRequests } from "@/lib/rate-limit";
-import { GEMINI_MODEL, generateRoadmapDraft, geminiConfigured } from "@/lib/gemini";
+import { GROQ_MODEL, generateRoadmapDraft, groqConfigured } from "@/lib/groq";
 
 const briefSchema = z.object({
   projectName: z.string().trim().min(2).max(120),
@@ -29,8 +29,8 @@ export async function POST(request: Request) {
   const user = await getSessionUser(supabase);
   if (!user) return unauthorized();
 
-  if (!geminiConfigured()) {
-    return badRequest("AI planning is not switched on yet. Add GEMINI_API_KEY to the server environment, or write the roadmap yourself below.");
+  if (!groqConfigured()) {
+    return badRequest("AI planning is not switched on yet. Add GROQ_API_KEY to the server environment, or write the roadmap yourself below.");
   }
 
   const limited = rateLimit(`roadmap:generate:${user.id}`, 8, 60_000);
@@ -38,5 +38,5 @@ export async function POST(request: Request) {
 
   const { draft, error } = await generateRoadmapDraft(parsed.data);
   if (error) return badRequest(error);
-  return NextResponse.json({ draft, model: GEMINI_MODEL });
+  return NextResponse.json({ draft, model: GROQ_MODEL, provider: "groq" });
 }

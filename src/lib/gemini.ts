@@ -8,7 +8,7 @@ import { MAX_PHASES, MAX_TASKS_PER_PHASE, parseRoadmapDraft, type RoadmapDraft }
  */
 
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
-const DEFAULT_MODEL = "gemini-2.5-flash";
+const DEFAULT_MODEL = "gemini-3.5-flash-lite";
 const REQUEST_TIMEOUT_MS = 45_000;
 
 export const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
@@ -74,7 +74,14 @@ function describeFailure(model: string, status: number, payload: unknown) {
     payload && typeof payload === "object" && "error" in payload
       ? String((payload as { error: { message?: string } }).error?.message ?? "")
       : "";
-  if (status === 401 || status === 403) return "Gemini rejected the API key. Check GEMINI_API_KEY in the server environment.";
+  if (status === 401) return "Gemini rejected the API key. Replace GEMINI_API_KEY in the server environment.";
+  if (status === 403 && /suspended|disabled/i.test(message)) {
+    return "The Google Cloud project behind GEMINI_API_KEY is suspended or disabled. Create a key in an active project and replace the Vercel environment variable.";
+  }
+  if (status === 403 && /free tier|billing|paid tier|project unavailable/i.test(message)) {
+    return "This Gemini project cannot use the free tier. Enable billing for the Google AI project, or use an API key from a project with Gemini access.";
+  }
+  if (status === 403) return "Gemini rejected the API key. Check that the key belongs to an active Google Cloud project and replace GEMINI_API_KEY in Vercel.";
   if (status === 404 || /not found|unsupported/i.test(message)) {
     return `Gemini has no model named "${model}" for this key. Set GEMINI_MODEL to a model your key can use (run npm run test:ai to list them).`;
   }

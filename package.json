@@ -12,7 +12,7 @@
     "test:integration": "node scripts/integration-test.mjs",
     "test": "npm run test:unit && npm run test:integration",
     "verify:db": "node scripts/verify-migrations.mjs",
-    "test:ai": "node scripts/verify-gemini.mjs"
+    "test:ai": "node scripts/verify-groq.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

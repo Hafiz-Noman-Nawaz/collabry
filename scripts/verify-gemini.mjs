@@ -24,7 +24,7 @@ function loadEnv() {
 
 const env = loadEnv();
 const key = env.GEMINI_API_KEY;
-const model = env.GEMINI_MODEL || "gemini-2.5-flash";
+const model = env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 
 if (!key) {
   console.error("GEMINI_API_KEY is not set. Add it to .env.local (server-only, no NEXT_PUBLIC_ prefix).");
