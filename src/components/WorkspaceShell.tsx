@@ -90,6 +90,12 @@ export function WorkspaceShell({
   const [email, setEmail] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiQuestion, setAiQuestion] = useState("");
+  const [aiAnswer, setAiAnswer] = useState("");
+  const [aiSources, setAiSources] = useState<Array<{ citation: string; title: string; type: string }>>([]);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState("");
   const [query, setQuery] = useState("");
   const [teams, setTeams] = useState<SearchTeam[]>([]);
   const seenNotifications = useRef<Set<string>>(new Set());
@@ -181,6 +187,7 @@ export function WorkspaceShell({
         setMobileMenuOpen(false);
         setSearchOpen(false);
         setNotifyOpen(false);
+        setAiOpen(false);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -212,6 +219,34 @@ export function WorkspaceShell({
   async function signOut() {
     await createClient().auth.signOut();
     router.push("/login");
+  }
+
+  async function askAi(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const teamId = teams[0]?.id;
+    if (!teamId || !aiQuestion.trim()) return;
+    setAiBusy(true);
+    setAiError("");
+    setAiAnswer("");
+    setAiSources([]);
+    try {
+      const response = await fetch("/api/ai/copilot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamId, question: aiQuestion.trim() }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setAiError(result.error ?? "The AI assistant could not answer.");
+        return;
+      }
+      setAiAnswer(result.answer ?? "");
+      setAiSources(result.sources ?? []);
+    } catch {
+      setAiError("The AI assistant could not be reached. Try again.");
+    } finally {
+      setAiBusy(false);
+    }
   }
 
   /** Marks one notification read where it stands, without leaving the current screen. */
@@ -387,6 +422,40 @@ export function WorkspaceShell({
         </div>
       )}
 
+      {aiOpen && (
+        <div className="ai-backdrop" onClick={() => setAiOpen(false)}>
+          <div className="ai-panel" role="dialog" aria-modal="true" aria-label="Ask AI" onClick={(event) => event.stopPropagation()}>
+            <div className="ai-panel-heading">
+              <div>
+                <strong>Ask AI</strong>
+                <small>Answers are grounded in indexed project knowledge.</small>
+              </div>
+              <button type="button" onClick={() => setAiOpen(false)} aria-label="Close Ask AI">×</button>
+            </div>
+            <form onSubmit={askAi}>
+              <textarea
+                value={aiQuestion}
+                onChange={(event) => setAiQuestion(event.target.value)}
+                placeholder="Ask about progress, blockers, tasks, roadmap, or decisions…"
+                rows={3}
+                autoFocus
+              />
+              <button type="submit" disabled={aiBusy || !aiQuestion.trim() || teams.length === 0}>
+                {aiBusy ? "Thinking…" : "Ask"}
+              </button>
+            </form>
+            {aiError && <p className="ai-error">{aiError}</p>}
+            {aiAnswer && <div className="ai-answer"><p>{aiAnswer}</p></div>}
+            {aiSources.length > 0 && (
+              <div className="ai-sources">
+                <strong>Sources</strong>
+                {aiSources.map((source) => <span key={source.citation}>[{source.citation}] {source.title || source.type}</span>)}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <section className="collabry-content">
         <header className="collabry-topbar">
           <div className="topbar-left">
@@ -403,6 +472,9 @@ export function WorkspaceShell({
             <button className="global-search" type="button" onClick={() => setSearchOpen(true)}>
               ⌕ <span>Search workspace...</span>
               <kbd>⌘ K</kbd>
+            </button>
+            <button className="ask-ai-trigger" type="button" onClick={() => setAiOpen(true)}>
+              ✦ Ask AI
             </button>
           </div>
 

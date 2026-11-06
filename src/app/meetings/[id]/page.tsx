@@ -89,6 +89,8 @@ function MeetingScreen() {
   const [itemTitle, setItemTitle] = useState("");
   const [itemAssignee, setItemAssignee] = useState("");
   const [itemTask, setItemTask] = useState("");
+  const [aiAnalysis, setAiAnalysis] = useState<{ summary?: string; decisions?: string[]; actionItems?: Array<{ title: string; reason: string }>; questions?: string[] } | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/meetings/${meetingId}`);
@@ -156,6 +158,21 @@ function MeetingScreen() {
       return result;
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function analyzeMeeting() {
+    if (!meeting) return;
+    setAiBusy(true);
+    setMessage("");
+    try {
+      const result = await request("/api/ai/communication", {
+        method: "POST",
+        body: JSON.stringify({ teamId: meeting.team_id, meetingId: meeting.id, type: "meeting_actions" }),
+      });
+      if (result?.result) setAiAnalysis(result.result);
+    } finally {
+      setAiBusy(false);
     }
   }
 
@@ -497,6 +514,25 @@ function MeetingScreen() {
         ) : (
           <div className="screen-empty"><strong>No minutes yet</strong><p>A manager will record them after the meeting.</p></div>
         )}
+        <div className="ai-project-insight" style={{ marginTop: 16 }}>
+          <div className="ai-project-insight-head">
+            <div>
+              <strong>AI meeting assistant</strong>
+              <p>Extracts decisions and reviewable action items from this meeting.</p>
+            </div>
+            <button type="button" onClick={analyzeMeeting} disabled={aiBusy}>
+              {aiBusy ? "Analyzing…" : "Analyze meeting"}
+            </button>
+          </div>
+          {aiAnalysis && (
+            <div className="ai-project-insight-body">
+              {aiAnalysis.summary && <p>{aiAnalysis.summary}</p>}
+              {aiAnalysis.decisions && aiAnalysis.decisions.length > 0 && <div><strong>Decisions</strong><ul>{aiAnalysis.decisions.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+              {aiAnalysis.actionItems && aiAnalysis.actionItems.length > 0 && <div><strong>Suggested action items</strong><ul>{aiAnalysis.actionItems.map((item) => <li key={item.title}><b>{item.title}</b> — {item.reason}</li>)}</ul><small>Review these suggestions and add them above when approved.</small></div>}
+              {aiAnalysis.questions && aiAnalysis.questions.length > 0 && <div><strong>Needs clarification</strong><ul>{aiAnalysis.questions.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+            </div>
+          )}
+        </div>
       </section>
 
       {canManage && meeting.meeting_attendees.length > 0 && (

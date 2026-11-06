@@ -20,6 +20,13 @@ NEXT_PUBLIC_APP_URL=https://YOUR_DOMAIN
 CRON_SECRET
 ```
 
+AI knowledge is project-scoped. Apply the Supabase migration
+`supabase/migrations/202611060012_ai_auto_ingestion.sql` after the AI foundation
+migration to automatically index tasks, roadmap phases, meetings, minutes,
+messages, announcements, and project-file metadata for grounded Ask AI answers.
+File binary contents are intentionally not sent to Groq; document extraction
+requires an explicit parser and storage policy.
+
 4. Verify Resend with a domain you own, then confirm `GET /api/health` reports `database: connected`, `email: connected` **and** `emailSender: verified`. A verified API key with an unverified sender still fails every send, which is why both are reported.
 5. Schedule `/api/jobs/run`. The route accepts `GET` (Vercel Cron) and `POST` (external schedulers) and authenticates with `x-cron-secret` or `Authorization: Bearer $CRON_SECRET`. `vercel.json` ships a once-daily schedule because the Vercel **Hobby** plan rejects anything more frequent; for timely reminders on Hobby, point a free external scheduler (cron-job.org, Upstash QStash, or a GitHub Actions schedule) at `https://YOUR_DOMAIN/api/jobs/run` every minute with the bearer header. On Pro the schedule can be `* * * * *`.
 6. Smoke-test the real artifact before switching DNS: `npm run build && npm run start`, then sign in, open a task and a meeting, and confirm `/api/health` is green.

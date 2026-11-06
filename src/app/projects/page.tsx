@@ -28,6 +28,9 @@ function ProjectsScreen() {
   const [busy, setBusy] = useState(false);
   const [showRoadmap, setShowRoadmap] = useState(false);
   const [roadmapDraft, setRoadmapDraft] = useState<ReviewedPhase[]>([]);
+  const [aiHealth, setAiHealth] = useState<{ status: string; summary: string; blockers: string[]; risks: string[]; recommendations: string[] } | null>(null);
+  const [aiHealthBusy, setAiHealthBusy] = useState(false);
+  const [aiHealthError, setAiHealthError] = useState("");
   const createFormRef = useRef<HTMLFormElement>(null);
   const pageSize = 6;
 
@@ -141,7 +144,31 @@ function ProjectsScreen() {
       setSettingsFor(null);
       await refresh();
     }
+
     setBusy(false);
+  }
+
+  async function analyzeProject() {
+    if (!settingsFor) return;
+    setAiHealthBusy(true);
+    setAiHealthError("");
+    try {
+      const response = await fetch("/api/ai/workflow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamId: settingsFor.id, action: "health" }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setAiHealthError(result.error ?? "Unable to analyze this project.");
+        return;
+      }
+      setAiHealth(result.result ?? null);
+    } catch {
+      setAiHealthError("The AI assistant could not be reached.");
+    } finally {
+      setAiHealthBusy(false);
+    }
   }
 
   async function deleteProject() {
@@ -313,6 +340,27 @@ function ProjectsScreen() {
               </div>
             </form>
             <RoadmapPanel teamId={settingsFor.id} onChanged={refresh} />
+            <section className="ai-project-insight">
+              <div className="ai-project-insight-head">
+                <div>
+                  <strong>AI project health</strong>
+                  <p>Reviewable advice from tasks, roadmap phases, and meetings.</p>
+                </div>
+                <button type="button" onClick={analyzeProject} disabled={aiHealthBusy}>
+                  {aiHealthBusy ? "Analyzing…" : "Analyze"}
+                </button>
+              </div>
+              {aiHealthError && <p className="screen-message error">{aiHealthError}</p>}
+              {aiHealth && (
+                <div className="ai-project-insight-body">
+                  <span className={`badge ${aiHealth.status === "healthy" ? "green" : aiHealth.status === "critical" ? "red" : "yellow"}`}>{aiHealth.status.replace("_", " ")}</span>
+                  <p>{aiHealth.summary}</p>
+                  {aiHealth.blockers.length > 0 && <div><strong>Blockers</strong><ul>{aiHealth.blockers.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+                  {aiHealth.risks.length > 0 && <div><strong>Risks</strong><ul>{aiHealth.risks.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+                  {aiHealth.recommendations.length > 0 && <div><strong>Recommended next actions</strong><ul>{aiHealth.recommendations.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+                </div>
+              )}
+            </section>
             <div className="danger-zone">
               <div>
                 <strong>Delete this project</strong>

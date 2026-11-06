@@ -29,6 +29,45 @@ export type RoadmapBrief = {
   notes: string;
 };
 
+export async function generateGroundedAnswer(input: {
+  system: string;
+  question: string;
+  context: string;
+}): Promise<{ answer: string | null; error: string | null; usage: { inputTokens: number; outputTokens: number } }> {
+  const key = process.env.GROQ_API_KEY?.trim();
+  const emptyUsage = { inputTokens: 0, outputTokens: 0 };
+  if (!key) return { answer: null, error: "AI planning is not connected. Add GROQ_API_KEY to the server environment.", usage: emptyUsage };
+  try {
+    const response = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        messages: [
+          { role: "system", content: input.system },
+          { role: "user", content: `Project context:\n${input.context}\n\nQuestion:\n${input.question}` },
+        ],
+        temperature: 0.2,
+        max_tokens: 3000,
+      }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) return { answer: null, error: describeFailure(response.status, payload), usage: emptyUsage };
+    const answer = (payload as { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content?.trim();
+    if (!answer) return { answer: null, error: "Groq returned no answer.", usage: emptyUsage };
+    const usage = (payload as { usage?: { prompt_tokens?: number; completion_tokens?: number } }).usage;
+    return {
+      answer,
+      error: null,
+      usage: { inputTokens: usage?.prompt_tokens ?? 0, outputTokens: usage?.completion_tokens ?? 0 },
+    };
+  } catch (error) {
+    const reason = error instanceof Error && error.name === "TimeoutError" ? "timed out" : "could not be reached";
+    return { answer: null, error: `Groq ${reason}.`, usage: emptyUsage };
+  }
+}
+
 function describeFailure(status: number, payload: unknown) {
   const message =
     payload && typeof payload === "object" && "error" in payload

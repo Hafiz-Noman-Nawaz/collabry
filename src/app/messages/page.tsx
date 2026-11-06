@@ -61,6 +61,12 @@ type TeamMember = { user_id: string; profiles: { full_name: string } | null };
 type Channel = ReturnType<ReturnType<typeof createClient>["channel"]>;
 type StagedFile = { key: string; file: File; preview: string | null };
 type MenuState = { messageId: string; x: number; y: number };
+type CommunicationAnalysis = {
+  summary?: string;
+  decisions?: string[];
+  actionItems?: Array<{ title: string; reason: string }>;
+  questions?: string[];
+};
 type Viewer = { src: string; name: string } | null;
 
 const PAGE_SIZE = 30;
@@ -139,6 +145,8 @@ export default function MessagesPage() {
   const [dragging, setDragging] = useState(false);
   const [showJump, setShowJump] = useState(false);
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState<CommunicationAnalysis | null>(null);
 
   const typingRef = useRef<Channel | null>(null);
   const typingTimers = useRef<Record<string, number>>({});
@@ -170,6 +178,27 @@ export default function MessagesPage() {
 
   function announce(partial: string) {
     setNotice(partial);
+  }
+
+  async function analyzeConversation() {
+    if (!selected || !teamId) return;
+    setAiBusy(true);
+    setNotice("");
+    try {
+      const response = await fetch("/api/ai/communication", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamId, conversationId: selected.id, type: "conversation_summary" }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        announce(result.error ?? "Unable to analyze this conversation.");
+        return;
+      }
+      setAiAnalysis(result.result ?? null);
+    } finally {
+      setAiBusy(false);
+    }
   }
 
   /** Newest page from the server, merged by id so optimistic rows and older pages survive. */
@@ -424,6 +453,7 @@ export default function MessagesPage() {
     clearStaged();
     setMenu(null);
     setSelected(conversation);
+    setAiAnalysis(null);
   }
 
   async function deliver(conversationId: string, text: string, files: File[], localId: string) {
@@ -853,11 +883,32 @@ export default function MessagesPage() {
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <span className="online-dot">● Live</span>
+                  <button className="chat-back" onClick={analyzeConversation} disabled={aiBusy} title="Summarize this conversation with AI">
+                    {aiBusy ? "Analyzing..." : "AI summary"}
+                  </button>
                   <button className="chat-back" aria-label="Conversation members" onClick={() => setShowMembers((current) => !current)}>
                     ☰
                   </button>
                 </div>
               </div>
+
+              {aiAnalysis && (
+                <div className="ai-project-insight" style={{ margin: "12px 16px 0" }}>
+                  <div className="ai-project-insight-head">
+                    <div>
+                      <strong>Conversation summary</strong>
+                      <p>Review-only analysis based on the messages currently available.</p>
+                    </div>
+                    <button className="chat-back" onClick={() => setAiAnalysis(null)}>Hide</button>
+                  </div>
+                  <div className="ai-project-insight-body">
+                    {aiAnalysis.summary && <p>{aiAnalysis.summary}</p>}
+                    {aiAnalysis.decisions && aiAnalysis.decisions.length > 0 && <div><strong>Decisions</strong><ul>{aiAnalysis.decisions.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+                    {aiAnalysis.actionItems && aiAnalysis.actionItems.length > 0 && <div><strong>Suggested action items</strong><ul>{aiAnalysis.actionItems.map((item) => <li key={item.title}><b>{item.title}</b> — {item.reason}</li>)}</ul></div>}
+                    {aiAnalysis.questions && aiAnalysis.questions.length > 0 && <div><strong>Needs clarification</strong><ul>{aiAnalysis.questions.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+                  </div>
+                </div>
+              )}
 
               {showMembers && (
                 <div style={{ padding: "10px 16px", borderBottom: "1px solid #ffffff12", background: "#0a0b20" }}>

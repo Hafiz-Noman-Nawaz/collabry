@@ -35,6 +35,7 @@ const expectedTables = [
   "task_comments", "task_checklist_items", "task_events", "task_reviews",
   "message_reactions", "meeting_action_items",
   "roadmap_phases",
+  "ai_knowledge_chunks", "ai_usage_events",
 ];
 
 // Migration-5 columns the workspace screens select on; their absence used to
@@ -54,7 +55,7 @@ const expectedColumns = [
 // handle_new_user is a trigger function returning `trigger`, which PostgREST
 // never exposes over RPC, so it cannot be probed here; the integration test
 // verifies it indirectly by creating a user and checking the auto-created profile.
-const expectedFunctions = ["create_team", "accept_invitation", "accept_invitation_by_token", "is_team_member", "has_team_role", "is_conversation_member", "is_conversation_creator", "conversation_team_id"];
+const expectedFunctions = ["create_team", "accept_invitation", "accept_invitation_by_token", "is_team_member", "has_team_role", "is_conversation_member", "is_conversation_creator", "conversation_team_id", "search_ai_knowledge"];
 
 const serviceHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
 
