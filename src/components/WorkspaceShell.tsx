@@ -28,6 +28,34 @@ type NotificationItem = {
 
 type SearchTeam = { id: string; name: string };
 
+function ColabAvatar({ compact = false }: { compact?: boolean }) {
+  return (
+    <span className={`colab-avatar${compact ? " compact" : ""}`} aria-hidden="true">
+      <span className="colab-head">
+        <span className="colab-glasses"><i /><i /></span>
+        <span className="colab-smile" />
+      </span>
+      <span className="colab-coat" />
+    </span>
+  );
+}
+
+function StructuredAnswer({ answer }: { answer: string }) {
+  const blocks = answer.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  return (
+    <div className="colab-answer-content">
+      {blocks.map((block, index) => {
+        const lines = block.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        const bullets = lines.filter((line) => /^[-*•]\s+/.test(line));
+        if (bullets.length === lines.length && bullets.length > 0) {
+          return <ul key={`${index}-${block.slice(0, 12)}`}>{bullets.map((line) => <li key={line}>{line.replace(/^[-*•]\s+/, "")}</li>)}</ul>;
+        }
+        return <p key={`${index}-${block.slice(0, 12)}`}>{lines.join(" ")}</p>;
+      })}
+    </div>
+  );
+}
+
 function Icon({ name }: { name: string }) {
   const paths: Record<string, string> = {
     dashboard: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
@@ -91,6 +119,7 @@ export function WorkspaceShell({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
+  const [aiTeamId, setAiTeamId] = useState("");
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiAnswer, setAiAnswer] = useState("");
   const [aiSources, setAiSources] = useState<Array<{ citation: string; title: string; type: string }>>([]);
@@ -168,7 +197,9 @@ export function WorkspaceShell({
       .then((response) => (response.ok ? response.json() : null))
       .then((result) => {
         if (!cancelled && result?.teams) {
-          setTeams(result.teams.map((team: SearchTeam) => ({ id: team.id, name: team.name })));
+          const loadedTeams = result.teams.map((team: SearchTeam) => ({ id: team.id, name: team.name }));
+          setTeams(loadedTeams);
+          setAiTeamId((current) => loadedTeams.some((team: SearchTeam) => team.id === current) ? current : loadedTeams[0]?.id ?? "");
         }
       })
       .catch(() => undefined);
@@ -223,7 +254,7 @@ export function WorkspaceShell({
 
   async function askAi(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const teamId = teams[0]?.id;
+    const teamId = aiTeamId;
     if (!teamId || !aiQuestion.trim()) return;
     setAiBusy(true);
     setAiError("");
@@ -423,37 +454,65 @@ export function WorkspaceShell({
       )}
 
       {aiOpen && (
-        <div className="ai-backdrop" onClick={() => setAiOpen(false)}>
-          <div className="ai-panel" role="dialog" aria-modal="true" aria-label="Ask AI" onClick={(event) => event.stopPropagation()}>
+          <div className="ai-panel" role="dialog" aria-modal="false" aria-label="Ask Colab">
             <div className="ai-panel-heading">
-              <div>
-                <strong>Ask AI</strong>
-                <small>Answers are grounded in indexed project knowledge.</small>
+              <div className="colab-identity">
+                <ColabAvatar compact />
+                <div>
+                  <strong>Colab</strong>
+                  <small>Your grounded project scientist</small>
+                </div>
               </div>
               <button type="button" onClick={() => setAiOpen(false)} aria-label="Close Ask AI">×</button>
             </div>
-            <form onSubmit={askAi}>
-              <textarea
-                value={aiQuestion}
-                onChange={(event) => setAiQuestion(event.target.value)}
-                placeholder="Ask about progress, blockers, tasks, roadmap, or decisions…"
-                rows={3}
-                autoFocus
-              />
-              <button type="submit" disabled={aiBusy || !aiQuestion.trim() || teams.length === 0}>
-                {aiBusy ? "Thinking…" : "Ask"}
-              </button>
-            </form>
-            {aiError && <p className="ai-error">{aiError}</p>}
-            {aiAnswer && <div className="ai-answer"><p>{aiAnswer}</p></div>}
-            {aiSources.length > 0 && (
-              <div className="ai-sources">
-                <strong>Sources</strong>
-                {aiSources.map((source) => <span key={source.citation}>[{source.citation}] {source.title || source.type}</span>)}
+            <div className="ai-scroll">
+              <label className="ai-project-picker">
+                <span>Project context</span>
+                <select value={aiTeamId} onChange={(event) => setAiTeamId(event.target.value)} aria-label="Project context">
+                  {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+                </select>
+              </label>
+              {!aiAnswer && !aiError && (
+                <div className="ai-welcome">
+                  <ColabAvatar />
+                  <strong>Hi, I&apos;m Colab.</strong>
+                  <p>Ask me about your roadmap, tasks, blockers, meetings, or project progress.</p>
+                </div>
+              )}
+              {aiAnswer && (
+                <div className="ai-answer">
+                  <div className="ai-answer-label"><ColabAvatar compact /><span>Colab&apos;s analysis</span></div>
+                  <StructuredAnswer answer={aiAnswer} />
+                </div>
+              )}
+              {aiError && <p className="ai-error">{aiError}</p>}
+              {aiSources.length > 0 && (
+                <div className="ai-sources">
+                  <strong>Evidence used</strong>
+                  {aiSources.map((source) => <span key={source.citation}><b>[{source.citation}]</b> {source.title || source.type}</span>)}
+                </div>
+              )}
+            </div>
+            <div className="ai-composer">
+              <div className="ai-prompts" aria-label="Suggested questions">
+                {["What is blocked?", "What should we do next?", "Summarize progress"].map((prompt) => (
+                  <button key={prompt} type="button" onClick={() => setAiQuestion(prompt)}>{prompt}</button>
+                ))}
               </div>
-            )}
+              <form onSubmit={askAi}>
+                <textarea
+                  value={aiQuestion}
+                  onChange={(event) => setAiQuestion(event.target.value)}
+                  placeholder="Ask Colab anything about this project…"
+                  rows={2}
+                  autoFocus
+                />
+                <button type="submit" disabled={aiBusy || !aiQuestion.trim() || !aiTeamId}>
+                  {aiBusy ? "…" : "Send"}
+                </button>
+              </form>
+            </div>
           </div>
-        </div>
       )}
 
       <section className="collabry-content">
@@ -474,7 +533,7 @@ export function WorkspaceShell({
               <kbd>⌘ K</kbd>
             </button>
             <button className="ask-ai-trigger" type="button" onClick={() => setAiOpen(true)}>
-              ✦ Ask AI
+              ✦ Colab
             </button>
           </div>
 
@@ -553,6 +612,10 @@ export function WorkspaceShell({
 
         <div className={`collabry-page${dense ? " collabry-page-dense" : ""}`}>{children}</div>
       </section>
+      <button className={`colab-fab${aiOpen ? " active" : ""}`} type="button" onClick={() => setAiOpen((open) => !open)} aria-label={aiOpen ? "Close Colab assistant" : "Open Colab assistant"}>
+        <ColabAvatar compact />
+        <span>Colab</span>
+      </button>
     </main>
   );
 }
