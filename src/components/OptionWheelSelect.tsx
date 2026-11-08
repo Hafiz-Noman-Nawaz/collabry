@@ -33,11 +33,15 @@ export function OptionWheelSelect({
   const selected = options[selectedIndex];
   const visible = useMemo(() => {
     if (options.length === 0) return [];
-    return Array.from({ length: Math.min(5, options.length) }, (_, offset) => {
-      const distance = offset - Math.floor(Math.min(5, options.length) / 2);
-      const index = selectedIndex + distance;
-      return { option: options[(index + options.length) % options.length], distance };
-    });
+    const windowSize = Math.min(5, options.length);
+    const start = Math.min(
+      Math.max(selectedIndex - Math.floor(windowSize / 2), 0),
+      options.length - windowSize,
+    );
+    return options.slice(start, start + windowSize).map((option, index) => ({
+      option,
+      distance: start + index - selectedIndex,
+    }));
   }, [options, selectedIndex]);
 
   useEffect(() => {
