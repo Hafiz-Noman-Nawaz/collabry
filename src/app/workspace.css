@@ -353,6 +353,7 @@
   font-size: 11px;
   cursor: pointer;
 }
+.search-icon { width: 14px; height: 14px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.8; }
 .ask-ai-trigger { padding: 7px 11px; border: 1px solid #9c69f54d; border-radius: 7px; color: #d7c4ff; background: #9c69f512; font-size: 10px; cursor: pointer; }
 .ask-ai-trigger:hover { border-color: #b38cff; background: #9c69f526; }
 .ai-panel { position: fixed; z-index: 35; right: 24px; bottom: 88px; display: flex; width: min(420px, calc(100vw - 32px)); max-height: min(680px, calc(100vh - 120px)); flex-direction: column; padding: 16px; border: 1px solid #ffffff24; border-radius: 18px; background: linear-gradient(145deg, #292353f5, #101126f8); box-shadow: 0 24px 80px #00000080, 0 0 0 1px #9c69f51a; backdrop-filter: blur(18px); animation: colab-rise .24s cubic-bezier(.2,.8,.2,1); }

@@ -74,6 +74,15 @@ function Icon({ name }: { name: string }) {
   );
 }
 
+function SearchIcon() {
+  return (
+    <svg className="search-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="10.8" cy="10.8" r="6.3" />
+      <path d="m16 16 4.5 4.5" />
+    </svg>
+  );
+}
+
 function notificationHref(item: NotificationItem) {
   // Deep-link when the notification names a screen we actually have.
   if (item.resource_type === "task" && item.resource_id) return `/tasks/${item.resource_id}`;
@@ -372,7 +381,7 @@ export function WorkspaceShell({
           </span>
         </div>
         <button className="sidebar-search" type="button" onClick={() => setSearchOpen(true)}>
-          <span>⌕</span> Search workspace
+          <SearchIcon /> Search workspace
         </button>
         <nav className="collabry-nav" aria-label="Workspace navigation">
           {navButtons}
@@ -529,7 +538,7 @@ export function WorkspaceShell({
               <span className="hamburger-line" />
             </button>
             <button className="global-search" type="button" onClick={() => setSearchOpen(true)}>
-              ⌕ <span>Search workspace...</span>
+              <SearchIcon /> <span>Search workspace...</span>
               <kbd>⌘ K</kbd>
             </button>
             <button className="ask-ai-trigger" type="button" onClick={() => setAiOpen(true)}>
