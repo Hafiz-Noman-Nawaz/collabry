@@ -16,6 +16,20 @@ button { font: inherit; }
 :where(button, a, input, select, textarea):focus-visible { outline: 2px solid #a77cff; outline-offset: 2px; }
 button, a, input, select, textarea { transition: border-color .18s ease, background-color .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease; }
 button:not(:disabled):active { transform: translateY(1px); }
+select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, #a77cff 50%), linear-gradient(135deg, #a77cff 50%, transparent 50%); background-position: calc(100% - 14px) 50%, calc(100% - 10px) 50%; background-repeat: no-repeat; background-size: 4px 4px, 4px 4px; padding-right: 28px !important; transition: border-color .2s ease, box-shadow .2s ease; }
+select:focus { border-color: #9c69f5 !important; box-shadow: 0 0 0 3px #9c69f51f; outline: 0; }
+select option { color: #e8e7f7; background: #171735; }
+.option-wheel-select { position: relative; min-width: 0; }
+.option-wheel-trigger { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border: 1px solid #ffffff18; border-radius: 7px; color: #fff; background: #0c0d23aa; font-size: 11px; text-align: left; cursor: pointer; }
+.option-wheel-trigger:hover, .option-wheel-select.is-open .option-wheel-trigger { border-color: #9c69f5; box-shadow: 0 0 0 3px #9c69f51f; }
+.option-wheel-trigger:disabled { opacity: .5; cursor: not-allowed; }
+.option-wheel-placeholder { color: #7c7a9c; }
+.option-wheel-chevron { color: #a77cff; font-size: 14px; line-height: 1; }
+.option-wheel-menu { position: absolute; z-index: 80; top: calc(100% + 6px); right: 0; left: 0; display: grid; gap: 2px; padding: 9px 7px; overflow: hidden; border: 1px solid #ffffff22; border-radius: 12px; background: linear-gradient(150deg, #2b2456, #14152e); box-shadow: 0 20px 55px #000000a8; animation: option-wheel-in .16s ease-out; }
+.option-wheel-rail { position: absolute; top: 50%; right: 7px; left: 7px; height: 34px; border: 1px solid #9c69f54d; border-radius: 7px; background: #9c69f512; transform: translateY(-50%); pointer-events: none; }
+.option-wheel-option { position: relative; z-index: 1; min-height: 34px; padding: 7px 10px; border: 0; border-radius: 7px; color: #aaa7c5; background: transparent; font-size: 11px; text-align: center; cursor: pointer; }
+.option-wheel-option:hover, .option-wheel-option.selected { color: #fff; }
+@keyframes option-wheel-in { from { opacity: 0; transform: translateY(-5px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 .collabry-page > * {
   animation: page-enter .42s cubic-bezier(.2,.8,.2,1) both;
 }

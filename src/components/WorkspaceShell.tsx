@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/browser";
+import { OptionWheelSelect } from "@/components/OptionWheelSelect";
 
 const workspaceNav: Array<{ label: string; href: string; icon: string }> = [
   { label: "Overview", href: "/", icon: "dashboard" },
@@ -477,9 +478,12 @@ export function WorkspaceShell({
             <div className="ai-scroll">
               <label className="ai-project-picker">
                 <span>Project context</span>
-                <select value={aiTeamId} onChange={(event) => setAiTeamId(event.target.value)} aria-label="Project context">
-                  {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
-                </select>
+                <OptionWheelSelect
+                  value={aiTeamId}
+                  onChange={setAiTeamId}
+                  ariaLabel="Project context"
+                  options={teams.map((team) => ({ value: team.id, label: team.name }))}
+                />
               </label>
               {!aiAnswer && !aiError && (
                 <div className="ai-welcome">

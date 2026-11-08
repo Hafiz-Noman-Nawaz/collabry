@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { WorkspaceShell } from "@/components/WorkspaceShell";
+import { OptionWheelSelect } from "@/components/OptionWheelSelect";
 import { DateField } from "@/components/DateTimeField";
 import { RoadmapPanel, RoadmapPlanner, type ReviewedPhase } from "@/components/Roadmap";
 import { useWorkspace, WorkspaceTeam } from "@/lib/useWorkspace";
@@ -234,15 +235,8 @@ function ProjectsScreen() {
 
       <div className="screen-toolbar">
         <input className="grow" placeholder="Search projects..." value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} aria-label="Search projects" />
-        <select value={category} onChange={(event) => { setCategory(event.target.value); setPage(0); }} aria-label="Filter by category">
-          <option value="">All categories</option>
-          {categories.map((item) => <option key={item} value={item}>{item}</option>)}
-        </select>
-        <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(0); }} aria-label="Filter by status">
-          <option value="">Any status</option>
-          <option value="active">Active</option>
-          <option value="overdue">Past target date</option>
-        </select>
+        <OptionWheelSelect value={category} onChange={(value) => { setCategory(value); setPage(0); }} ariaLabel="Filter by category" options={[{ value: "", label: "All categories" }, ...categories.map((item) => ({ value: item, label: item }))]} />
+        <OptionWheelSelect value={status} onChange={(value) => { setStatus(value); setPage(0); }} ariaLabel="Filter by status" options={[{ value: "", label: "Any status" }, { value: "active", label: "Active" }, { value: "overdue", label: "Past target date" }]} />
         <button onClick={() => { setSearch(""); setCategory(""); setStatus(""); setPage(0); }}>Reset</button>
       </div>
 
